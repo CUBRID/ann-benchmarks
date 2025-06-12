@@ -56,20 +56,11 @@ RUN PRESET=release_avx2 && \
 # USER cubrid
 USER root
 RUN cd /tmp/cubrid-python && \
-    # hacky way to fix submodule
     git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
     git submodule update --init --recursive && \
-    python setup_3.py build && \
-    python setup_3.py install
-
-RUN cd /tmp && \
-    cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
-    echo "[ann]" >> $CUBRID/conf/cubrid.conf && \
-    echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
-
-RUN cubrid server start ann && cubrid broker start && \
-    csql -u dba ann -c "CREATE USER ann;" && \
-    csql -u dba ann -c "ALTER USER ann PASSWORD 'ann';"
+    cd ./cci-src && ./build.sh && cd .. && \
+    python setup.py build && \
+    python setup.py install
 
 ENV CUBRID /tmp/cubrid_install
 ENV CUBRID_DATABASES $CUBRID/databases
@@ -84,4 +75,12 @@ ENV ANN_BENCHMARKS_CUB_DBNAME ann
 ENV ANN_BENCHMARKS_CUB_HOST localhost
 ENV ANN_BENCHMARKS_CUB_PORT 33000
 
-ENTRYPOINT bash
+RUN cd /tmp && \
+    cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
+    echo "[ann]" >> $CUBRID/conf/cubrid.conf && \
+    echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
+
+RUN cubrid server start ann && cubrid broker start && \
+    csql -u dba ann -c "CREATE USER ann;" && \
+    csql -u dba ann -c "ALTER USER ann PASSWORD 'ann';"
+
