@@ -1,8 +1,7 @@
 """
 This module supports connecting to a CUBRID instance and performing vector
-indexing and search using the pgvector extension. The default behavior uses
-the "ann" value of CUBRID user name, password, and database name, as well
-as the default host and port values of the psycopg driver.
+indexing and search. The default behavior uses the "ann" value of CUBRID user name, password, and database name.
+and the default host and port values are localhost and 33000.
 
 If CUBRID is managed externally, e.g. in a cloud DBaaS environment, the
 environment variable overrides listed below are available for setting CUBRID
@@ -14,12 +13,8 @@ ANN_BENCHMARKS_CUB_DBNAME
 ANN_BENCHMARKS_CUB_HOST
 ANN_BENCHMARKS_CUB_PORT
 
-This module starts the CUBRID service automatically using the "service"
-command. The environment variable ANN_BENCHMARKS_CUB_START_SERVICE could be set
-to "false" (or e.g. "0" or "no") in order to disable this behavior.
-
-This module will also attempt to create the pgvector extension inside the
-target database, if it has not been already created.
+This module starts the CUBRID server and broker automatically using the "cubrid"
+command.
 """
 
 

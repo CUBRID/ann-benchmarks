@@ -18,6 +18,7 @@ RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
+    git checkout cubvec/cubvec && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j$(nproc) && \
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_DIR"
