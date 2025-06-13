@@ -1,7 +1,7 @@
 float:
   any:
   - base_args: ['@metric']
-    constructor: CUBRIDVector
+    constructor: CUBVEC 
     disabled: false
     docker_tag: ann-benchmarks-cubrid
     module: ann_benchmarks.algorithms.cubrid

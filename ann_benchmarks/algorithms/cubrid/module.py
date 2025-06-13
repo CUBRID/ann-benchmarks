@@ -17,7 +17,6 @@ This module starts the CUBRID server and broker automatically using the "cubrid"
 command.
 """
 
-
 import os
 import subprocess
 import sys
@@ -40,36 +39,54 @@ METRIC_PROPERTIES = {
     }
 }
 
-
 def get_cub_param_env_var_name(pg_param_name: str) -> str:
     return f'ANN_BENCHMARKS_CUB_{pg_param_name.upper()}'
 
-
-def get_cub_conn_param(
-        cub_param_name: str,
-        default_value: Optional[str] = None) -> Optional[str]:
+def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None) -> Optional[str]:
     env_var_name = get_cub_param_env_var_name(cub_param_name)
     env_var_value = os.getenv(env_var_name, default_value)
     if env_var_value is None or len(env_var_value.strip()) == 0:
         return default_value
     return env_var_value
 
-@contextlib.contextmanager
-def open_connection(host, port, database, user, password):
+def open_connection_primitive(host, port, database, user, password):
     url = f"CUBRID:{host}:{port}:{database}:::"
-    conn = CUBRIDdb.connect(url, user, password or '')
-    try:
-        yield conn
-    finally:
-        conn.close()
+    return CUBRIDdb.connect(url, user, password or '')
 
-@contextlib.contextmanager
-def open_cursor(conn):
-    cur = conn.cursor()
+def open_cursor_primitive(conn):
+    return conn.cursor()
+
+def write_loaddb_object_file(X, output_path):
+    with open(output_path, 'w') as f:
+        f.write("%id items 0\n")
+        f.write("%class items ([id] [embedding])\n")
+
+        for i, vec in enumerate(X):
+            vec_str = "[" + ", ".join(map(str, vec)) + "]"
+            f.write(f"{i}\t'{vec_str}'\n")
+
+def run_loaddb(db_name: str, object_file_path: str):
     try:
-        yield cur
-    finally:
-        cur.close()
+        result = subprocess.run(
+            [
+                "cubrid", "loaddb",
+                "-C",                   # Create mode
+                "-u", "ann",           # DBA user
+                "-p", "ann",           # DBA password
+                "-d", object_file_path,
+                "-c", "10000",
+                "--no-statistics",
+                db_name
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        print("loaddb output:\n", result.stdout)
+    except subprocess.CalledProcessError as e:
+        print("loaddb failed with error:\n", e.stderr)
+        raise
 
 class CUBVEC(BaseANN):
     def __init__(self, metric, method_param):
@@ -86,79 +103,121 @@ class CUBVEC(BaseANN):
             raise RuntimeError(f"unknown metric {metric}")
 
     def get_metric_properties(self) -> Dict[str, str]:
-        """
-        Get properties of the metric type associated with this index.
-
-        Returns:
-            A dictionary with keys distance_operator and ops_type.
-        """
         if self._metric not in METRIC_PROPERTIES:
-            raise ValueError(
-                "Unknown metric: {}. Valid metrics: {}".format(
-                    self._metric,
-                    ', '.join(sorted(METRIC_PROPERTIES.keys()))
-                ))
+            raise ValueError("Unknown metric: {}. Valid metrics: {}".format(
+                self._metric, ', '.join(sorted(METRIC_PROPERTIES.keys()))))
         return METRIC_PROPERTIES[self._metric]
 
     def fit(self, X):
-        cubrid_connect_kwargs: Dict[str, Any] = dict(
-            autocommit=True,
-        )
+        cubrid_connect_kwargs: Dict[str, Any] = dict(autocommit=True)
         for arg_name in ['user', 'password', 'dbname']:
-            # The default value is "ann" for all of these parameters.
-            cubrid_connect_kwargs[arg_name] = get_cub_conn_param(
-                arg_name, 'ann')
+            cubrid_connect_kwargs[arg_name] = get_cub_conn_param(arg_name, 'ann')
 
-        # If host/port are not specified, leave the default choice to the
-        # psycopg driver.
-        cub_host: Optional[str] = get_cub_conn_param('host')
+        cub_host = get_cub_conn_param('host')
         if cub_host is not None:
             cubrid_connect_kwargs['host'] = cub_host
 
-        cub_port_str: Optional[str] = get_cub_conn_param('port')
+        cub_port_str = get_cub_conn_param('port')
         if cub_port_str is not None:
             cubrid_connect_kwargs['port'] = int(cub_port_str)
 
-        should_start_service = True
-        if should_start_service:
-            subprocess.run(
-                "cubrid service start",
-                shell=True,
-                check=True,
-                stdout=sys.stdout,
-                stderr=sys.stderr)
-        else:
-            print(
-                "Assuming that CUBRID service is managed externally. "
-                "Not attempting to start the service.")
-            
-        conn = open_connection(cubrid_connect_kwargs['host'], cubrid_connect_kwargs['port'], cubrid_connect_kwargs['dbname'], cubrid_connect_kwargs['user'], cubrid_connect_kwargs['password'])
-        cur = open_cursor(conn)
-        cur.execute("DROP TABLE IF EXISTS items;")
-        cur.execute("CREATE TABLE items (id int, embedding vector(%d));" % X.shape[1])
-        print("creating index...")
-        sys.stdout.flush()
-        create_index_str = \
-            "CREATE INDEX ON items(embedding %s) " \
-            "WITH (m = %d, ef_construction = %d);" % (
-                self.get_metric_properties()["ops_type"],
-                self._m,
-                self._ef_construction
-            )
-        cur.execute(create_index_str)
-        print("copying data...")
-        sys.stdout.flush()
-        num_rows = 0
-        insert_start_time_sec = time.time()
-        for i, vec in enumerate(X):
-            cur.execute("INSERT INTO items (id, embedding) VALUES (%d, %s);" % (i, vec))
-            num_rows += 1
-        insert_elapsed_time_sec = time.time() - insert_start_time_sec
+        print(cubrid_connect_kwargs)
 
-        print("inserted {} rows into table in {:.3f} seconds".format(
-            num_rows, insert_elapsed_time_sec))
+        try:
+            subprocess.run(["cubrid", "service", "stop"], check=True)
+            print("CUBRID server stopped.")
+        except subprocess.CalledProcessError as e:
+            print("Failed to stop CUBRID server:", e)
 
-        self._cur = cur
+        try:
+            subprocess.run(["cubrid", "server", "start", "ann"], check=True)
+            print("CUBRID server 'ann' started.")
+        except subprocess.CalledProcessError as e:
+            print("Failed to start CUBRID server:", e)
+
+        try:
+            subprocess.run(["cubrid", "broker", "start"], check=True)
+            print("CUBRID broker started.")
+        except subprocess.CalledProcessError as e:
+            print("Failed to start CUBRID broker:", e)
+
+        idx_num = 0
+        conn = open_connection_primitive(
+            cubrid_connect_kwargs['host'],
+            cubrid_connect_kwargs['port'],
+            cubrid_connect_kwargs['dbname'],
+            cubrid_connect_kwargs['user'],
+            cubrid_connect_kwargs['password']
+        )
+
+        try:
+            try:
+                cur = open_cursor_primitive(conn)
+                cur.execute("DROP TABLE IF EXISTS items;")
+                cur.execute("CREATE TABLE items (id int, embedding vector(%d));" % X.shape[1])
+                print("creating index...")
+                sys.stdout.flush()
+
+                idx_num += 1
+                create_index_str = (
+                    "CREATE VECTOR INDEX idx_v_%d ON items(embedding %s) "
+                    "WITH (m = %d, ef_construction = %d);" % (
+                        idx_num,
+                        self.get_metric_properties()["ops_type"],
+                        self._m,
+                        self._ef_construction
+                    )
+                )
+                cur.execute(create_index_str)
+
+                print("copying data...")
+                sys.stdout.flush()
+
+                batch_size = 100000
+                total_rows = X.shape[0]
+                dim = X.shape[1]
+                for start in range(0, total_rows, batch_size):
+                    end = min(start + batch_size, total_rows)
+                    batch = X[start:end]
+                    object_file_path = f"/tmp/items_object_{start}_{end}"
+
+                    with open(object_file_path, "w") as f:
+                        f.write("%id items 0\n")
+                        f.write("%class items ([id] [embedding])\n")
+                        for i, vec in enumerate(batch, start=start):
+                            vec_str = "[" + ",".join(map(str, vec)) + "]"
+                            f.write(f"{i} '{vec_str}'\n")
+
+                    try:
+                        result = subprocess.run([
+                            "cubrid", "loaddb",
+                            "-C",
+                            "-u", "ann",
+                            "-p", "ann",
+                            "-d", object_file_path,
+                            "-c", "100000",
+                            "--no-statistics",
+                            cubrid_connect_kwargs['dbname']
+                        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                        # elapse time needed in the following output
+                        print(f"loaddb ({start}-{end}) output:\n", result.stdout)
+                    except subprocess.CalledProcessError as e:
+                        print("loaddb failed with error:\n", e.stderr)
+                        raise
+
+            except Exception as e:
+                print("Error during DB setup or insertion:", e)
+                raise
+            finally:
+                conn.close()
+
+            # expose the cursor
+            self._cur = conn.cursor()
+
+        except Exception as e:
+            print("Error during DB setup or connection:", e)
+            raise
 
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
@@ -169,7 +228,6 @@ class CUBVEC(BaseANN):
         return [id for id, in self._cur.fetchall()]
 
     def get_memory_usage(self):
-        # TODO: Implement this
         return 0
 
     def __str__(self):

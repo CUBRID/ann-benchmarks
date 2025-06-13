@@ -42,6 +42,7 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 
 RUN cd /tmp/cubrid && git fetch --all --prune
 
+USER root
 RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
@@ -54,7 +55,6 @@ RUN PRESET=release_avx2 && \
 
 # do we need to run as cubrid?
 # USER cubrid
-USER root
 RUN cd /tmp/cubrid-python && \
     git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
     git submodule update --init --recursive && \
@@ -73,14 +73,38 @@ ENV ANN_BENCHMARKS_CUB_USER ann
 ENV ANN_BENCHMARKS_CUB_PASSWORD ann
 ENV ANN_BENCHMARKS_CUB_DBNAME ann
 ENV ANN_BENCHMARKS_CUB_HOST localhost
-ENV ANN_BENCHMARKS_CUB_PORT 33000
+ENV ANN_BENCHMARKS_CUB_SERVER_PORT 5556
+
+# broker port
+ENV ANN_BENCHMARKS_CUB_PORT 33001
+# number of cas
+ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
 
 RUN cd /tmp && \
     cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
     echo "[ann]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
 
-RUN cubrid server start ann && cubrid broker start && \
+RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
+    cubrid server start ann && \
+    until cubrid server status | grep -q "Server ann"; do \
+        echo "Waiting for 'ann' DB to start..."; \
+        sleep 1; \
+    done && \
+    awk ' \
+      BEGIN { skip=0 } \
+      /^\[%query_editor\]/ { skip=1; next } \
+      /^\[/ && skip { skip=0 } \
+      !skip \
+    ' $CUBRID/conf/cubrid_broker.conf > /tmp/cubrid_broker.conf && \
+    mv /tmp/cubrid_broker.conf $CUBRID/conf/cubrid_broker.conf && \
+    sed -i "s/^MIN_NUM_APPL_SERVER[ \t]*=.*/MIN_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
+    sed -i "s/^MAX_NUM_APPL_SERVER[ \t]*=.*/MAX_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
+    sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf && \
+    cubrid broker start && \
+    until cubrid broker status | grep -q "% broker1"; do \
+        echo "Waiting for broker1 to start..."; \
+        sleep 1; \
+    done && \
     csql -u dba ann -c "CREATE USER ann;" && \
     csql -u dba ann -c "ALTER USER ann PASSWORD 'ann';"
-
