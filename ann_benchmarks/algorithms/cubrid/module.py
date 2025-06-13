@@ -124,12 +124,6 @@ class CUBVEC(BaseANN):
         print(cubrid_connect_kwargs)
 
         try:
-            subprocess.run(["cubrid", "service", "stop"], check=True)
-            print("CUBRID server stopped.")
-        except subprocess.CalledProcessError as e:
-            print("Failed to stop CUBRID server:", e)
-
-        try:
             subprocess.run(["cubrid", "server", "start", "ann"], check=True)
             print("CUBRID server 'ann' started.")
         except subprocess.CalledProcessError as e:
@@ -173,21 +167,27 @@ class CUBVEC(BaseANN):
                 print("copying data...")
                 sys.stdout.flush()
 
-                batch_size = 100000
+                batch_size = 10000
                 total_rows = X.shape[0]
                 dim = X.shape[1]
+                insert_start_time_sec = time.time()
+
                 for start in range(0, total_rows, batch_size):
                     end = min(start + batch_size, total_rows)
                     batch = X[start:end]
                     object_file_path = f"/tmp/items_object_{start}_{end}"
 
+                    insert_batch_time_sec = time.time()
                     with open(object_file_path, "w") as f:
                         f.write("%id items 0\n")
                         f.write("%class items ([id] [embedding])\n")
                         for i, vec in enumerate(batch, start=start):
                             vec_str = "[" + ",".join(map(str, vec)) + "]"
                             f.write(f"{i} '{vec_str}'\n")
+                        print("converted {} rows into object file in {:.3f} seconds".format(
+                            end - start, time.time() - insert_batch_time_sec))
 
+                    insert_batch_time_sec = time.time()
                     try:
                         result = subprocess.run([
                             "cubrid", "loaddb",
@@ -195,25 +195,33 @@ class CUBVEC(BaseANN):
                             "-u", "ann",
                             "-p", "ann",
                             "-d", object_file_path,
-                            "-c", "100000",
+                            "-c", "5000",
                             "--no-statistics",
                             cubrid_connect_kwargs['dbname']
                         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
+                        print("inserted {} rows into table in {:.3f} seconds".format(
+                            end - start, time.time() - insert_batch_time_sec))
+                        sys.stdout.flush()
+
+                        print("{} rows are remaining".format(total_rows - start))
+
                         # elapse time needed in the following output
-                        print(f"loaddb ({start}-{end}) output:\n", result.stdout)
                     except subprocess.CalledProcessError as e:
                         print("loaddb failed with error:\n", e.stderr)
                         raise
+
+                print("### total time to insert {} rows into table: {:.3f} seconds".format(
+                    total_rows, time.time() - insert_start_time_sec))
 
             except Exception as e:
                 print("Error during DB setup or insertion:", e)
                 raise
             finally:
-                conn.close()
-
+                cur.close()
+        
             # expose the cursor
-            self._cur = conn.cursor()
+            self._cur = open_cursor_primitive(conn)
 
         except Exception as e:
             print("Error during DB setup or connection:", e)
