@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import contextlib
+import io
 import CUBRIDdb
 
 from typing import Dict, Any, Optional
@@ -96,9 +97,9 @@ class CUBVEC(BaseANN):
         self._cur = None
 
         if metric == "angular":
-            self._query = "SELECT id FROM items ORDER BY embedding <c> %s LIMIT %s"
+            self._query = "SELECT id FROM items ORDER BY embedding <c> '{}' LIMIT {}"
         elif metric == "euclidean":
-            self._query = "SELECT id FROM items ORDER BY embedding <-> %s LIMIT %s"
+            self._query = "SELECT id FROM items ORDER BY embedding <-> '{}' LIMIT {}"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
@@ -178,14 +179,33 @@ class CUBVEC(BaseANN):
                     object_file_path = f"/tmp/items_object_{start}_{end}"
 
                     insert_batch_time_sec = time.time()
+
+
+                    buffer = io.StringIO()
+                    buffer.write("%id items 0\n")
+                    buffer.write("%class items ([id] [embedding])\n")
+
+                    lines = [
+                        f"{i} '[{','.join(map(str, vec))}]'\n"
+                        for i, vec in enumerate(batch, start=start)
+                    ]
+                    buffer.writelines(lines)
+
                     with open(object_file_path, "w") as f:
-                        f.write("%id items 0\n")
-                        f.write("%class items ([id] [embedding])\n")
-                        for i, vec in enumerate(batch, start=start):
-                            vec_str = "[" + ",".join(map(str, vec)) + "]"
-                            f.write(f"{i} '{vec_str}'\n")
-                        print("converted {} rows into object file in {:.3f} seconds".format(
-                            end - start, time.time() - insert_batch_time_sec))
+                        f.write(buffer.getvalue())
+
+                    print("converted {} rows into object file in {:.3f} seconds".format(
+                        end - start, time.time() - insert_batch_time_sec))
+
+
+                    #with open(object_file_path, "w") as f:
+                    #    f.write("%id items 0\n")
+                    #    f.write("%class items ([id] [embedding])\n")
+                    #    for i, vec in enumerate(batch, start=start):
+                    #        vec_str = "[" + ",".join(map(str, vec)) + "]"
+                    #        f.write(f"{i} '{vec_str}'\n")
+                    #    print("converted {} rows into object file in {:.3f} seconds".format(
+                    #        end - start, time.time() - insert_batch_time_sec))
 
                     insert_batch_time_sec = time.time()
                     try:
@@ -196,6 +216,7 @@ class CUBVEC(BaseANN):
                             "-p", "ann",
                             "-d", object_file_path,
                             "-c", "5000",
+                            "--estimated-size", str(batch_size),
                             "--no-statistics",
                             cubrid_connect_kwargs['dbname']
                         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -232,7 +253,9 @@ class CUBVEC(BaseANN):
         self._cur.execute("SET SYSTEM PARAMETERS 'hnsw_ef_search=%d'" % ef_search)
 
     def query(self, v, n):
-        self._cur.execute(self._query, (v, n), binary=True, prepare=True)
+        vector_str = "[" + ",".join(map(str, v)) + "]"
+        query_str = self._query.format(vector_str, n)
+        self._cur.execute(query_str)
         return [id for id, in self._cur.fetchall()]
 
     def get_memory_usage(self):
