@@ -64,7 +64,7 @@ def write_loaddb_object_file(X, output_path):
 
         for i, vec in enumerate(X):
             vec_str = "[" + ", ".join(map(str, vec)) + "]"
-            f.write(f"{i}\t'{vec_str}'\n")
+            f.write(f"{i} '{vec_str}'\n")
 
 def run_loaddb(db_name: str, object_file_path: str):
     try:
@@ -95,11 +95,13 @@ class CUBVEC(BaseANN):
         self._m = method_param['M']
         self._ef_construction = method_param['efConstruction']
         self._cur = None
+        self._signature_base = metric + "_" + str(self._m) + "_" + str(self._ef_construction)
+        self._signature = self._signature_base
 
         if metric == "angular":
-            self._query = "SELECT id FROM items ORDER BY embedding <c> '{}' LIMIT {}"
+            self._query = "SELECT id FROM {} ORDER BY embedding <c> '{}' LIMIT {}"
         elif metric == "euclidean":
-            self._query = "SELECT id FROM items ORDER BY embedding <-> '{}' LIMIT {}"
+            self._query = "SELECT id FROM {} ORDER BY embedding <-> '{}' LIMIT {}"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
@@ -136,7 +138,6 @@ class CUBVEC(BaseANN):
         except subprocess.CalledProcessError as e:
             print("Failed to start CUBRID broker:", e)
 
-        idx_num = 0
         conn = open_connection_primitive(
             cubrid_connect_kwargs['host'],
             cubrid_connect_kwargs['port'],
@@ -147,17 +148,68 @@ class CUBVEC(BaseANN):
 
         try:
             try:
+                total_rows = X.shape[0]
+                dim = X.shape[1]
+
+                if (self._signature == self._signature_base):
+                    self._signature += "_" + str(total_rows) + "_" + str(dim)
+
+                batch_size = 50000
+
+                print("copying data...")
+                sys.stdout.flush()
+                header = f"%id ann.{self._signature} 0\n%class ann.{self._signature} ([id] [embedding])\n"
+                for start in range(0, total_rows, batch_size):
+                    end = min(start + batch_size, total_rows)
+                    batch = X[start:end]
+                    object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+
+                    insert_batch_time_sec = time.time()
+
+                    # if the flag file exists, skip the following
+                    if os.path.exists(object_file_path + ".flag"):
+                        print("skipping {} rows, start: {}, end: {}".format(end - start, start, end))
+                        continue
+                    else:
+                        buffer = io.StringIO()
+                        lines = [
+                                f"{i} '[{','.join(map(str, vec))}]'\n"
+                                for i, vec in enumerate(batch, start=start)
+                        ]
+                        buffer.write(header)
+                        buffer.writelines(lines)
+                        try:
+                            with open(object_file_path, "w") as f:    
+                                f.write(buffer.getvalue())
+                            with open(object_file_path + ".flag", "w") as f:
+                                f.write("success")
+                        except Exception as e:
+                            print("Error during writing object file:", e)
+                            raise
+
+                    print("converted {} rows into object file in {:.3f} seconds".format(
+                        end - start, time.time() - insert_batch_time_sec))
+
                 cur = open_cursor_primitive(conn)
-                cur.execute("DROP TABLE IF EXISTS items;")
-                cur.execute("CREATE TABLE items (id int, embedding vector(%d));" % X.shape[1])
-                print("creating index...")
+                # if the self._signature table exists, skip the following
+                try:
+                    cur.execute("SELECT COUNT(*) FROM " + self._signature + ";")
+                    if cur.fetchone()[0] == total_rows:
+                        print("table " + self._signature + " already exists, skip the index creation")
+                        return
+                except Exception as e:
+                    print("Error during checking table existence:", e)
+
+                print("creating a new table " + self._signature + " and index...")
+                cur.execute("DROP TABLE IF EXISTS " + self._signature + ";")
+                cur.execute("CREATE TABLE " + self._signature + " (id int, embedding vector(%d));" % dim)
+
                 sys.stdout.flush()
 
-                idx_num += 1
                 create_index_str = (
-                    "CREATE VECTOR INDEX idx_v_%d ON items(embedding %s) "
+                    "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
                     "WITH (m = %d, ef_construction = %d);" % (
-                        idx_num,
+                        self._signature,
                         self.get_metric_properties()["ops_type"],
                         self._m,
                         self._ef_construction
@@ -165,60 +217,25 @@ class CUBVEC(BaseANN):
                 )
                 cur.execute(create_index_str)
 
-                print("copying data...")
-                sys.stdout.flush()
-
-                batch_size = 10000
-                total_rows = X.shape[0]
-                dim = X.shape[1]
                 insert_start_time_sec = time.time()
-
                 for start in range(0, total_rows, batch_size):
                     end = min(start + batch_size, total_rows)
                     batch = X[start:end]
-                    object_file_path = f"/tmp/items_object_{start}_{end}"
-
-                    insert_batch_time_sec = time.time()
-
-
-                    buffer = io.StringIO()
-                    buffer.write("%id items 0\n")
-                    buffer.write("%class items ([id] [embedding])\n")
-
-                    lines = [
-                        f"{i} '[{','.join(map(str, vec))}]'\n"
-                        for i, vec in enumerate(batch, start=start)
-                    ]
-                    buffer.writelines(lines)
-
-                    with open(object_file_path, "w") as f:
-                        f.write(buffer.getvalue())
-
-                    print("converted {} rows into object file in {:.3f} seconds".format(
-                        end - start, time.time() - insert_batch_time_sec))
-
-
-                    #with open(object_file_path, "w") as f:
-                    #    f.write("%id items 0\n")
-                    #    f.write("%class items ([id] [embedding])\n")
-                    #    for i, vec in enumerate(batch, start=start):
-                    #        vec_str = "[" + ",".join(map(str, vec)) + "]"
-                    #        f.write(f"{i} '{vec_str}'\n")
-                    #    print("converted {} rows into object file in {:.3f} seconds".format(
-                    #        end - start, time.time() - insert_batch_time_sec))
-
+                    object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+                    
                     insert_batch_time_sec = time.time()
                     try:
                         result = subprocess.run([
                             "cubrid", "loaddb",
                             "-C",
+                            cubrid_connect_kwargs['dbname'],
                             "-u", "ann",
                             "-p", "ann",
                             "-d", object_file_path,
-                            "-c", "5000",
+                            "-c", str(batch_size),
                             "--estimated-size", str(batch_size),
                             "--no-statistics",
-                            cubrid_connect_kwargs['dbname']
+                            "--no-user-specified-name"
                         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
                         print("inserted {} rows into table in {:.3f} seconds".format(
@@ -254,12 +271,9 @@ class CUBVEC(BaseANN):
 
     def query(self, v, n):
         vector_str = "[" + ",".join(map(str, v)) + "]"
-        query_str = self._query.format(vector_str, n)
+        query_str = self._query.format(self._signature, vector_str, n)
         self._cur.execute(query_str)
         return [id for id, in self._cur.fetchall()]
-
-    def get_memory_usage(self):
-        return 0
 
     def __str__(self):
         return f"CUBVEC(m={self._m}, ef_construction={self._ef_construction}, ef_search={self._ef_search})"
