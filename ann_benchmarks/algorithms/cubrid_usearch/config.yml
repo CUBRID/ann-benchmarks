@@ -4,7 +4,7 @@ float:
     constructor: CUBVEC 
     disabled: false
     docker_tag: localhost/ann-benchmarks-cubrid_usearch
-    module: ann_benchmarks.algorithms.cubrid
+    module: ann_benchmarks.algorithms.cubrid_usearch
     name: cubrid_usearch
     run_groups:
       M-16:
