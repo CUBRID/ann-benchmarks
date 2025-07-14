@@ -51,10 +51,12 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
     return env_var_value
 
 def open_connection_primitive(host, port, database, user, password):
+    print("### open connection...")
     url = f"CUBRID:{host}:{port}:{database}:::"
     return CUBRIDdb.connect(url, user, password or '')
 
 def open_cursor_primitive(conn):
+    print("### open cursor...")
     return conn.cursor()
 
 def write_loaddb_object_file(X, output_path):
@@ -90,11 +92,16 @@ def run_loaddb(db_name: str, object_file_path: str):
         raise
 
 class CUBVEC(BaseANN):
+
+    def done(self) -> None:
+        print("### done")
+
     def __init__(self, metric, method_param):
         self._metric = metric
         self._m = method_param['M']
         self._ef_construction = method_param['efConstruction']
         self._cur = None
+        self.is_prepared = False
 
         if metric == "angular":
             self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <c> ? LIMIT ?"
@@ -262,6 +269,7 @@ class CUBVEC(BaseANN):
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
         self._cur.execute("SET SYSTEM PARAMETERS 'hnsw_ef_search=%d'" % ef_search)
+        self.is_prepared = False
 
     def query(self, v, n):
         vector_str = "[" + ",".join(map(str, v)) + "]"
@@ -269,7 +277,7 @@ class CUBVEC(BaseANN):
         cur = self._cur
 
         if not self.is_prepared:
-            print("Preparing query...")
+            print("### preparing query...")
             cur._cs.prepare(query_str)
             self.is_prepared = True
 
