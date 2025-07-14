@@ -97,9 +97,9 @@ class CUBVEC(BaseANN):
         self._cur = None
 
         if metric == "angular":
-            self._query = "SELECT id FROM items ORDER BY embedding <c> '{}' LIMIT {}"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <c> ? LIMIT ?"
         elif metric == "euclidean":
-            self._query = "SELECT id FROM items ORDER BY embedding <-> '{}' LIMIT {}"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <-> ? LIMIT ?"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
@@ -137,13 +137,24 @@ class CUBVEC(BaseANN):
             print("Failed to start CUBRID broker:", e)
 
         idx_num = 0
-        conn = open_connection_primitive(
-            cubrid_connect_kwargs['host'],
-            cubrid_connect_kwargs['port'],
-            cubrid_connect_kwargs['dbname'],
-            cubrid_connect_kwargs['user'],
-            cubrid_connect_kwargs['password']
-        )
+
+        # Wait until the server is really ready
+        for _ in range(30):  # try for up to 30 seconds
+            try:
+                conn = open_connection_primitive(
+                    cubrid_connect_kwargs['host'],
+                    cubrid_connect_kwargs['port'],
+                    cubrid_connect_kwargs['dbname'],
+                    cubrid_connect_kwargs['user'],
+                    cubrid_connect_kwargs['password']
+                )
+                print("Connected to CUBRID successfully.")
+                break
+            except Exception as e:
+                print("Waiting for CUBRID to be ready...")
+                time.sleep(1)
+        else:
+            raise RuntimeError("CUBRID server did not become ready in time.")
 
         try:
             try:
@@ -254,9 +265,25 @@ class CUBVEC(BaseANN):
 
     def query(self, v, n):
         vector_str = "[" + ",".join(map(str, v)) + "]"
-        query_str = self._query.format(vector_str, n)
-        self._cur.execute(query_str)
-        return [id for id, in self._cur.fetchall()]
+        query_str = self._query
+        cur = self._cur
+
+        if not self.is_prepared:
+            print("Preparing query...")
+            cur._cs.prepare(query_str)
+            self.is_prepared = True
+
+        args = [vector_str, n]
+        set_type = None
+        if args is not None:
+            cur._bind_params(args, set_type)
+        r = cur._cs.execute()
+        cur.rowcount = cur._cs.rowcount
+        cur.description = cur._cs.description
+        # return r
+
+        res = [id for id, in cur.fetchall()]
+        return res
 
     def get_memory_usage(self):
         return 0
