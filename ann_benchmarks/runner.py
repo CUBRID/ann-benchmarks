@@ -76,6 +76,7 @@ def run_individual_query(algo: BaseANN, X_train: numpy.array, X_test: numpy.arra
             n_items_processed[0] += 1
             if n_items_processed[0] % 1000 == 0:
                 print("Processed %d/%d queries..." % (n_items_processed[0], len(X_test)))
+                print(candidates[:10])  # Show first 10 candidates
             if len(candidates) > count:
                 print(
                     "warning: algorithm %s returned %d results, but count"
@@ -336,6 +337,10 @@ def run_docker(
             os.path.abspath("ann_benchmarks"): {"bind": "/home/app/ann_benchmarks", "mode": "ro"},
             os.path.abspath("data"): {"bind": "/home/app/data", "mode": "ro"},
             os.path.abspath("results"): {"bind": "/home/app/results", "mode": "rw"},
+        },
+        hostname="dev2",
+        extra_hosts = {
+            "dev2": "127.0.0.1",
         },
         network_mode="host",
         cpuset_cpus=cpu_limit,
