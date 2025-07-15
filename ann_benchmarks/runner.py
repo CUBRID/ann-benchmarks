@@ -76,7 +76,7 @@ def run_individual_query(algo: BaseANN, X_train: numpy.array, X_test: numpy.arra
             n_items_processed[0] += 1
             if n_items_processed[0] % 1000 == 0:
                 print("Processed %d/%d queries..." % (n_items_processed[0], len(X_test)))
-                print("####### candidates:", candidates[:10])  # Show first 10 candidates
+                print("### candidates:", candidates[:10])  # Show first 10 candidates
             if len(candidates) > count:
                 print(
                     "warning: algorithm %s returned %d results, but count"
@@ -127,6 +127,7 @@ def run_individual_query(algo: BaseANN, X_train: numpy.array, X_test: numpy.arra
             results = [single_query(x) for x in X_test]
 
         total_time = sum(time for time, _ in results)
+        print("### total time for run %d: %.3f seconds" % (i + 1, total_time))
         total_candidates = sum(len(candidates) for _, candidates in results)
         search_time = total_time / len(X_test)
         avg_candidates = total_candidates / len(X_test)
