@@ -104,9 +104,9 @@ class CUBVEC(BaseANN):
         self.is_prepared = False
 
         if metric == "angular":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <c> ? LIMIT ?"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <c> ? LIMIT 10"
         elif metric == "euclidean":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <-> ? LIMIT ?"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <-> ? LIMIT 10"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
@@ -282,8 +282,8 @@ class CUBVEC(BaseANN):
         query_str = self._query
         cur = self._cur
 
-
-        args = [vector_str, n]
+        # args = [vector_str, n] # this reduces QPS from 3500 to 600
+        args = [vector_str]
         set_type = None
         if args is not None:
             cur._bind_params(args, set_type)
