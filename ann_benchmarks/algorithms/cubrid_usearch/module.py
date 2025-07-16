@@ -269,17 +269,12 @@ class CUBVEC(BaseANN):
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
         self._cur.execute("SET SYSTEM PARAMETERS 'hnsw_ef_search=%d'" % ef_search)
-        query_str = self._query
-        cur = self._cur
-        self.is_prepared = False
-        if not self.is_prepared:
-            print("### preparing query...")
-            cur._cs.prepare(query_str)
-            self.is_prepared = True
+
+        print("### preparing query...")
+        self._cur._cs.prepare(self._query)
 
     def query(self, v, n):
         vector_str = "[" + ",".join(map(str, v)) + "]"
-        query_str = self._query
         cur = self._cur
 
         # args = [vector_str, n] # this reduces QPS from 3500 to 600
