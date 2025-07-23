@@ -73,16 +73,16 @@ ENV ANN_BENCHMARKS_CUB_USER ann
 ENV ANN_BENCHMARKS_CUB_PASSWORD ann
 ENV ANN_BENCHMARKS_CUB_DBNAME ann
 ENV ANN_BENCHMARKS_CUB_HOST localhost
-ENV ANN_BENCHMARKS_CUB_SERVER_PORT 5560
+ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
 
 # broker port
-ENV ANN_BENCHMARKS_CUB_PORT 33004
+ENV ANN_BENCHMARKS_CUB_PORT 33000
 # number of cas
 ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
 
 RUN cd /tmp && \
     cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
-    echo "[ann]" >> $CUBRID/conf/cubrid.conf && \
+    echo "[@ann]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
