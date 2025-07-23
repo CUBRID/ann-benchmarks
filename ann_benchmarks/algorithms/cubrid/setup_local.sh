@@ -1,6 +1,8 @@
 #!/bin/bash
 
-# For local testing
+# For local testing setup
+# This script is used to setup the CUBRID server and broker for local testing.
+#   python run.py --algorithm cubrid --local
 
 export ANN_BENCHMARKS_CUB_USER=ann
 export ANN_BENCHMARKS_CUB_PASSWORD=ann
