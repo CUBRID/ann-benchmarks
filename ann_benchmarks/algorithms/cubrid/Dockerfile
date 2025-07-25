@@ -1,7 +1,5 @@
 FROM ann-benchmarks
 
-# https://github.com/pgvector/pgvector/blob/master/Dockerfile
-
 RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
@@ -106,5 +104,5 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
         echo "Waiting for broker1 to start..."; \
         sleep 1; \
     done && \
-    csql -u dba ann -c "CREATE USER ann;" && \
-    csql -u dba ann -c "ALTER USER ann PASSWORD 'ann';"
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD};"
