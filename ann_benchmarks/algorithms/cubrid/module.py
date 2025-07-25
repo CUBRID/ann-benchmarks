@@ -51,37 +51,6 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
     if env_var_value is None or len(env_var_value.strip()) == 0:
         return default_value
     return env_var_value
-
-def open_connection_primitive(host, port, database, user, password):
-    url = f"CUBRID:{host}:{port}:{database}:::"
-    return CUBRIDdb.connect(url, user, password or '')
-
-def open_cursor_primitive(conn):
-    return conn.cursor()
-
-def run_loaddb(db_name: str, object_file_path: str):
-    try:
-        result = subprocess.run(
-            [
-                "cubrid", "loaddb",
-                "-C",                   # Create mode
-                "-u", "ann",           # DBA user
-                "-p", "ann",           # DBA password
-                "-d", object_file_path,
-                "-c", "10000",
-                "--no-statistics",
-                db_name
-            ],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        print("loaddb output:\n", result.stdout)
-    except subprocess.CalledProcessError as e:
-        print("loaddb failed with error:\n", e.stderr)
-        raise
-
 class CUBVEC(BaseANN):
     def __init__(self, metric, method_param):
         self._metric = metric
@@ -108,7 +77,7 @@ class CUBVEC(BaseANN):
         self._prepare_signature(X)
         self._start_cubrid_services()
         conn = self._connect_to_db()
-        cur = open_cursor_primitive(conn)
+        cur = self._open_cursor_primitive(conn)
 
         try:
             self._prepare_object_files(X)
@@ -121,7 +90,7 @@ class CUBVEC(BaseANN):
         finally:
             cur.close()
 
-        self._cur = open_cursor_primitive(conn)
+        self._cur = self._open_cursor_primitive(conn)
 
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
@@ -132,6 +101,13 @@ class CUBVEC(BaseANN):
         query_str = self._query.format(self._signature)
         self._cur.execute(query_str, (vector_str, n))
         return [id for id, in self._cur.fetchall()]
+
+    def _open_connection_primitive(self, host, port, database, user, password):
+        url = f"CUBRID:{host}:{port}:{database}:::"
+        return CUBRIDdb.connect(url, user, password or '')
+
+    def _open_cursor_primitive(self, conn):
+        return conn.cursor()
 
     def _connect_to_db(self):
         kwargs = { 'autocommit': True }
@@ -145,7 +121,7 @@ class CUBVEC(BaseANN):
         if port: kwargs['port'] = int(port)
 
         print(kwargs)
-        return open_connection_primitive(kwargs.get('host', 'localhost'),
+        return self._open_connection_primitive(kwargs.get('host', 'localhost'),
                                         kwargs.get('port', 33000),
                                         kwargs['dbname'],
                                         kwargs['user'],
