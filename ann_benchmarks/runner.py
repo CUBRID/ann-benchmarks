@@ -337,6 +337,10 @@ def run_docker(
             os.path.abspath("data"): {"bind": "/home/app/data", "mode": "ro"},
             os.path.abspath("results"): {"bind": "/home/app/results", "mode": "rw"},
         },
+        hostname="dev2",
+        extra_hosts = {
+            "dev2": "127.0.0.1",
+        },
         network_mode="host",
         cpuset_cpus=cpu_limit,
         mem_limit=mem_limit,
