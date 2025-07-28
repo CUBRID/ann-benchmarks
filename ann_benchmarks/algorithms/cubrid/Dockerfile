@@ -46,7 +46,7 @@ RUN PRESET=release && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
     git fetch --all && \
-    git checkout origin/cubvec/experiment-usearch && \
+    git checkout origin/cubvec/experiment && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j$(nproc) && \
