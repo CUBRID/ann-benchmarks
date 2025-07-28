@@ -41,7 +41,7 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 RUN cd /tmp/cubrid && git fetch --all --prune
 
 USER root
-RUN PRESET=release && \
+RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
