@@ -41,11 +41,12 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 RUN cd /tmp/cubrid && git fetch --all --prune
 
 USER root
-RUN PRESET=release_avx2 && \
+RUN PRESET=release && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
-    git checkout cubvec/experiment && \
+    git fetch --all && \
+    git checkout origin/cubvec/experiment-usearch && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j$(nproc) && \
@@ -77,6 +78,7 @@ ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
 ENV ANN_BENCHMARKS_CUB_PORT 33000
 # number of cas
 ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
+ENV OPENBLAS_NUM_THREADS 1
 
 RUN cd /tmp && \
     cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
