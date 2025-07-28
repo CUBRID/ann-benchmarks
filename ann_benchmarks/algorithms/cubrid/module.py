@@ -52,17 +52,11 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
         return default_value
     return env_var_value
 class CUBVEC(BaseANN):
-
-    def done(self) -> None:
-        print("### done")
-
     def __init__(self, metric, method_param):
         self._metric = metric
         self._m = method_param['M']
         self._ef_construction = method_param['efConstruction']
         self._cur = None
-        self.is_prepared = False
-
         self._signature_base = metric + "_" + str(self._m) + "_" + str(self._ef_construction)
         self._signature = self._signature_base
 
@@ -102,7 +96,6 @@ class CUBVEC(BaseANN):
         self._ef_search = ef_search
         self._cur.execute("SET SYSTEM PARAMETERS 'hnsw_ef_search=%d'" % ef_search)
 
-        print("### preparing query...")
         query_str = self._query.format(self._signature)
         self._cur._cs.prepare(query_str)
 
@@ -118,10 +111,8 @@ class CUBVEC(BaseANN):
         r = cur._cs.execute()
         cur.rowcount = cur._cs.rowcount
         cur.description = cur._cs.description
-        # return r
 
-        res = [id for id, in cur.fetchall()]
-        return res
+        return [id for id, in cur.fetchall()]
 
     def _open_connection_primitive(self, host, port, database, user, password):
         url = f"CUBRID:{host}:{port}:{database}:::"
