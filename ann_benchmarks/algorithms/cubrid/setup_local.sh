@@ -11,6 +11,11 @@ export ANN_BENCHMARKS_CUB_HOST=localhost
 export ANN_BENCHMARKS_CUB_SERVER_PORT=1523
 export ANN_BENCHMARKS_CUB_PORT=33000
 export ANN_BENCHMARKS_CUB_NUM_CAS=50
+export ANN_BENCHMARKS_CUB_DB_PATH=/tmp/ann
+
+# to create a bare database, run the following command:
+# mkdir -p $ANN_BENCHMARKS_CUB_DB_PATH/initdb && cd $ANN_BENCHMARKS_CUB_DB_PATH/initdb && \
+# cubrid createdb --db-volume-size=100M --log-volume-size=100M ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8
 
 echo "[@ann]" >> $CUBRID/conf/cubrid.conf
 echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
