@@ -135,13 +135,13 @@ class CUBVEC(BaseANN):
         print(cubrid_connect_kwargs)
 
         try:
-            subprocess.run(["cubrid", "server", "start", "ann"], check=True)
+            subprocess.run(["cubrid", "server", "restart", "ann"], check=True)
             print("CUBRID server 'ann' started.")
         except subprocess.CalledProcessError as e:
             print("Failed to start CUBRID server:", e)
 
         try:
-            subprocess.run(["cubrid", "broker", "start"], check=True)
+            subprocess.run(["cubrid", "broker", "restart"], check=True)
             print("CUBRID broker started.")
         except subprocess.CalledProcessError as e:
             print("Failed to start CUBRID broker:", e)
