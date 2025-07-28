@@ -3,9 +3,9 @@ float:
   - base_args: ['@metric']
     constructor: CUBVEC 
     disabled: false
-    docker_tag: localhost/ann-benchmarks-cubrid_usearch
-    module: ann_benchmarks.algorithms.cubrid_usearch
-    name: cubrid_usearch
+    docker_tag: localhost/ann-benchmarks-cubrid
+    module: ann_benchmarks.algorithms.cubrid
+    name: cubrid
     run_groups:
       M-16:
         arg_groups: [{M: 16, efConstruction: 200}]
