@@ -1,7 +1,5 @@
 FROM ann-benchmarks
 
-# https://github.com/pgvector/pgvector/blob/master/Dockerfile
-
 RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
@@ -74,12 +72,12 @@ ENV ANN_BENCHMARKS_CUB_USER ann
 ENV ANN_BENCHMARKS_CUB_PASSWORD ann
 ENV ANN_BENCHMARKS_CUB_DBNAME ann
 ENV ANN_BENCHMARKS_CUB_HOST localhost
-ENV ANN_BENCHMARKS_CUB_SERVER_PORT 5560
+ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
 
 # broker port
-ENV ANN_BENCHMARKS_CUB_PORT 33004
+ENV ANN_BENCHMARKS_CUB_PORT 33000
 # number of cas
-ENV ANN_BENCHMARKS_CUB_NUM_CAS 1
+ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
 ENV OPENBLAS_NUM_THREADS 1
 
 RUN cd /tmp && \
@@ -108,5 +106,5 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
         echo "Waiting for broker1 to start..."; \
         sleep 1; \
     done && \
-    csql -u dba ann -c "CREATE USER ann;" && \
-    csql -u dba ann -c "ALTER USER ann PASSWORD 'ann';"
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD};"

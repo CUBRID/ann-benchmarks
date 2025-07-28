@@ -12,6 +12,8 @@ ANN_BENCHMARKS_CUB_PASSWORD
 ANN_BENCHMARKS_CUB_DBNAME
 ANN_BENCHMARKS_CUB_HOST
 ANN_BENCHMARKS_CUB_PORT
+ANN_BENCHMARKS_CUB_SERVER_PORT
+ANN_BENCHMARKS_CUB_NUM_CAS
 
 This module starts the CUBRID server and broker automatically using the "cubrid"
 command.
@@ -49,48 +51,6 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
     if env_var_value is None or len(env_var_value.strip()) == 0:
         return default_value
     return env_var_value
-
-def open_connection_primitive(host, port, database, user, password):
-    print("### open connection...")
-    url = f"CUBRID:{host}:{port}:{database}:::"
-    return CUBRIDdb.connect(url, user, password or '')
-
-def open_cursor_primitive(conn):
-    print("### open cursor...")
-    return conn.cursor()
-
-def write_loaddb_object_file(X, output_path):
-    with open(output_path, 'w') as f:
-        f.write("%id items 0\n")
-        f.write("%class items ([id] [embedding])\n")
-
-        for i, vec in enumerate(X):
-            vec_str = "[" + ", ".join(map(str, vec)) + "]"
-            f.write(f"{i} '{vec_str}'\n")
-
-def run_loaddb(db_name: str, object_file_path: str):
-    try:
-        result = subprocess.run(
-            [
-                "cubrid", "loaddb",
-                "-C",                   # Create mode
-                "-u", "ann",           # DBA user
-                "-p", "ann",           # DBA password
-                "-d", object_file_path,
-                "-c", "10000",
-                "--no-statistics",
-                db_name
-            ],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        print("loaddb output:\n", result.stdout)
-    except subprocess.CalledProcessError as e:
-        print("loaddb failed with error:\n", e.stderr)
-        raise
-
 class CUBVEC(BaseANN):
 
     def done(self) -> None:
@@ -120,176 +80,23 @@ class CUBVEC(BaseANN):
         return METRIC_PROPERTIES[self._metric]
 
     def fit(self, X):
-        cubrid_connect_kwargs: Dict[str, Any] = dict(autocommit=True)
-        for arg_name in ['user', 'password', 'dbname']:
-            cubrid_connect_kwargs[arg_name] = get_cub_conn_param(arg_name, 'ann')
-
-        cub_host = get_cub_conn_param('host')
-        if cub_host is not None:
-            cubrid_connect_kwargs['host'] = cub_host
-
-        cub_port_str = get_cub_conn_param('port')
-        if cub_port_str is not None:
-            cubrid_connect_kwargs['port'] = int(cub_port_str)
-
-        print(cubrid_connect_kwargs)
+        self._prepare_signature(X)
+        self._start_cubrid_services()
+        conn = self._connect_to_db()
+        cur = self._open_cursor_primitive(conn)
 
         try:
-            subprocess.run(["cubrid", "server", "restart", "ann"], check=True)
-            print("CUBRID server 'ann' started.")
-        except subprocess.CalledProcessError as e:
-            print("Failed to start CUBRID server:", e)
+            self._prepare_object_files(X)
+            if self._table_exists(cur, self._signature, X.shape[0]):
+                print("Table already exists with correct row count. Skipping.")
+                return
 
-        try:
-            subprocess.run(["cubrid", "broker", "restart"], check=True)
-            print("CUBRID broker started.")
-        except subprocess.CalledProcessError as e:
-            print("Failed to start CUBRID broker:", e)
+            self._create_table_and_index(cur, X.shape[1])
+            self._insert_data(X)
+        finally:
+            cur.close()
 
-        idx_num = 0
-
-        # Wait until the server is really ready
-        for _ in range(30):  # try for up to 30 seconds
-            try:
-                conn = open_connection_primitive(
-                    cubrid_connect_kwargs['host'],
-                    cubrid_connect_kwargs['port'],
-                    cubrid_connect_kwargs['dbname'],
-                    cubrid_connect_kwargs['user'],
-                    cubrid_connect_kwargs['password']
-                )
-                print("Connected to CUBRID successfully.")
-                break
-            except Exception as e:
-                print("Waiting for CUBRID to be ready...")
-                time.sleep(1)
-        else:
-            raise RuntimeError("CUBRID server did not become ready in time.")
-
-        try:
-            try:
-                total_rows = X.shape[0]
-                dim = X.shape[1]
-
-                print("copying data...")
-                sys.stdout.flush()
-
-                if (self._signature == self._signature_base):
-                    self._signature = self._signature_base + "_" + str(dim)
-                batch_size = 50000
-
-                print("copying data...")
-                sys.stdout.flush()
-
-                header = f"%id ann.{self._signature} 0\n%class ann.{self._signature} ([id] [embedding])\n"
-
-                for start in range(0, total_rows, batch_size):
-                    end = min(start + batch_size, total_rows)
-                    batch = X[start:end]
-
-                    object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
-
-                    insert_batch_time_sec = time.time()
-
-                    if os.path.exists(object_file_path + ".flag"):
-                        print("skipping {} rows, start: {}, end: {}".format(end - start, start, end))
-                        continue
-                    else:
-                        buffer = io.StringIO()
-                        lines = [
-                            f"{i} '[{','.join(map(str, vec))}]'\n"
-                            for i, vec in enumerate(batch, start=start)
-                        ]
-                        buffer.write(header)
-                        buffer.writelines(lines)
-
-                        try:
-                            with open(object_file_path, "w") as f:
-                                f.write(buffer.getvalue())
-                            with open(object_file_path + ".flag", "w") as f:
-                                f.write("success")
-                        except Exception as e:
-                            print("Error during writing object file:", e)
-                            raise
-
-                    print("converted {} rows into object file in {:.3f} seconds".format(
-                        end - start, time.time() - insert_batch_time_sec))
-
-                cur = open_cursor_primitive(conn)
-                # if the self._signature table exists, skip the following
-                try:
-                    cur.execute("SELECT COUNT(*) FROM " + self._signature)
-                    if cur.fetchone()[0] == total_rows:
-                        print("table " + self._signature + " already exists, skip the index creation")
-                        return
-
-                except Exception as e:
-                    print("Error during checking table existence:", e)
-
-                print("creating a new table " + self._signature + " and index...")
-                cur.execute("DROP TABLE IF EXISTS " + self._signature + ";")
-                cur.execute("CREATE TABLE " + self._signature + " (id int, embedding vector(%d));" % dim)
-
-                sys.stdout.flush()
-
-                create_index_str = (
-                    "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
-                    "WITH (m = %d, ef_construction = %d);" % (
-                            self._signature,
-                            self.get_metric_properties()["ops_type"],
-                            self._m,
-                            self._ef_construction
-                        )
-                )
-                cur.execute(create_index_str)
-
-                insert_start_time_sec = time.time()
-                for start in range(0, total_rows, batch_size):
-                    end = min(start + batch_size, total_rows)
-                    batch = X[start:end]
-                    object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
-
-                    insert_batch_time_sec = time.time()
-                    try:
-                        result = subprocess.run([
-                            "cubrid", "loaddb",
-                            "-C",
-                            cubrid_connect_kwargs['dbname'],
-                            "-u", "ann",
-                            "-p", "ann",
-                            "-d", object_file_path,
-                            "-c", str(batch_size),
-                            "--estimated-size", str(batch_size),
-                            "--no-statistics",
-                            "--no-user-specified-name"
-                        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-                        print("inserted {} rows into table in {:.3f} seconds".format(
-                            end - start, time.time() - insert_batch_time_sec))
-                        sys.stdout.flush()
-
-                        print("{} rows are remaining".format(total_rows - start))
-
-                        # elapse time needed in the following output
-                    except subprocess.CalledProcessError as e:
-                        print("loaddb failed with error:\n", e.stderr)
-                        raise
-
-                print("### total time to insert {} rows into table: {:.3f} seconds".format(
-                    total_rows, time.time() - insert_start_time_sec))
-
-            except Exception as e:
-                print("Error during DB setup or insertion:", e)
-                raise
-            finally:
-                cur.close()
-        
-            # expose the cursor
-            self._cur = open_cursor_primitive(conn)
-
-        except Exception as e:
-            print("Error during DB setup or connection:", e)
-            raise
+        self._cur = self._open_cursor_primitive(conn)
 
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
@@ -316,8 +123,126 @@ class CUBVEC(BaseANN):
         res = [id for id, in cur.fetchall()]
         return res
 
-    def get_memory_usage(self):
-        return 0
+    def _open_connection_primitive(self, host, port, database, user, password):
+        url = f"CUBRID:{host}:{port}:{database}:::"
+        return CUBRIDdb.connect(url, user, password or '')
+
+    def _open_cursor_primitive(self, conn):
+        return conn.cursor()
+
+    def _connect_to_db(self):
+        kwargs = { 'autocommit': True }
+        for arg in ['user', 'password', 'dbname']:
+                kwargs[arg] = get_cub_conn_param(arg, 'ann')
+
+        host = get_cub_conn_param('host')
+        if host: kwargs['host'] = host
+
+        port = get_cub_conn_param('port')
+        if port: kwargs['port'] = int(port)
+
+        print(kwargs)
+        return self._open_connection_primitive(kwargs.get('host', 'localhost'),
+                                        kwargs.get('port', 33000),
+                                        kwargs['dbname'],
+                                        kwargs['user'],
+                                        kwargs['password'])
+
+    def _start_cubrid_services(self):
+        try:
+                subprocess.run(["cubrid", "server", "start", "ann"], check=True)
+                print("CUBRID server 'ann' started.")
+        except subprocess.CalledProcessError as e:
+                print("Failed to start CUBRID server:", e)
+
+        try:
+                subprocess.run(["cubrid", "broker", "start"], check=True)
+                print("CUBRID broker started.")
+        except subprocess.CalledProcessError as e:
+                print("Failed to start CUBRID broker:", e)
+
+    def _prepare_signature(self, X):
+        total_rows, dim = X.shape
+        if self._signature == self._signature_base:
+                self._signature += f"_{total_rows}_{dim}"
+
+    def _prepare_object_files(self, X):
+        total_rows, dim = X.shape
+        batch_size = 50000
+        header = f"%id {self._signature} 0\n%class {self._signature} ([id] [embedding])\n"
+
+        for start in range(0, total_rows, batch_size):
+            end = min(start + batch_size, total_rows)
+            object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+            if os.path.exists(object_file_path + ".flag"):
+                print(f"Skipping batch {start}-{end}")
+                continue
+
+            buffer = io.StringIO()
+            lines = [
+                f"{i} '[{','.join(map(str, vec))}]'\n"
+                for i, vec in enumerate(X[start:end], start=start)
+            ]
+            buffer.write(header)
+            buffer.writelines(lines)
+
+            with open(object_file_path, "w") as f:
+                f.write(buffer.getvalue())
+            with open(object_file_path + ".flag", "w") as f:
+                f.write("success")
+
+            print(f"Prepared object file for batch {start}-{end}")
+
+    def _table_exists(self, cur, table_name, expected_count) -> bool:
+        try:
+                cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+                count = cur.fetchone()[0]
+                return count == expected_count
+        except Exception:
+                return False
+
+    def _create_table_and_index(self, cur, dim):
+        print(f"Creating table and index: {self._signature}")
+        cur.execute(f"DROP TABLE IF EXISTS {self._signature};")
+        cur.execute(f"CREATE TABLE {self._signature} (id int, embedding vector({dim}));")
+
+        idx_stmt = (
+                "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
+                "WITH (m = %d, ef_construction = %d);" % (
+                self._signature,
+                self.get_metric_properties()["ops_type"],
+                self._m,
+                self._ef_construction
+                )
+        )
+        cur.execute(idx_stmt)
+
+    def _insert_data(self, X):
+        total_rows = X.shape[0]
+        batch_size = 50000
+        start_time = time.time()
+
+        for start in range(0, total_rows, batch_size):
+            end = min(start + batch_size, total_rows)
+            object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+            try:
+                subprocess.run([
+                    "cubrid", "loaddb",
+                    "-C", get_cub_conn_param('dbname', 'ann'),
+                    "-u", "ann",
+                    "-p", "ann",
+                    "-d", object_file_path,
+                    "-c", str(batch_size),
+                    "--estimated-size", str(batch_size),
+                    "--no-statistics",
+                    "--no-user-specified-name"
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                print(f"Inserted rows {start}-{end}")
+            except subprocess.CalledProcessError as e:
+                print("loaddb failed with error:\n", e.stderr)
+                raise
+
+        print("Total insert time: {:.3f} sec".format(time.time() - start_time))
 
     def __str__(self):
         return f"CUBVEC(m={self._m}, ef_construction={self._ef_construction}, ef_search={self._ef_search})"
