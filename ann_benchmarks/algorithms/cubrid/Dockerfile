@@ -1,5 +1,7 @@
 FROM ann-benchmarks
 
+ARG BRANCH=origin/cubvec/experiment
+
 RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
@@ -45,7 +47,8 @@ RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
-    git checkout cubvec/experiment && \
+    git fetch --all && \
+    git checkout ${BRANCH} && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j$(nproc) && \
@@ -77,6 +80,8 @@ ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
 ENV ANN_BENCHMARKS_CUB_PORT 33000
 # number of cas
 ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
+# required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
+ENV OPENBLAS_NUM_THREADS 1
 
 RUN cd /tmp && \
     cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
@@ -105,4 +110,4 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
         sleep 1; \
     done && \
     csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD};"
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD}';"
