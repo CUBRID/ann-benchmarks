@@ -1,5 +1,7 @@
 FROM ann-benchmarks
 
+ARG BRANCH=origin/cubvec/experiment
+
 RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
@@ -46,7 +48,7 @@ RUN PRESET=release_avx2 && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
     git fetch --all && \
-    git checkout origin/cubvec/experiment && \
+    git checkout ${BRANCH} && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j$(nproc) && \
@@ -78,6 +80,7 @@ ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
 ENV ANN_BENCHMARKS_CUB_PORT 33000
 # number of cas
 ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
+# required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
 ENV OPENBLAS_NUM_THREADS 1
 
 RUN cd /tmp && \
