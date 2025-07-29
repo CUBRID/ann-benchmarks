@@ -337,6 +337,11 @@ def run_docker(
             os.path.abspath("data"): {"bind": "/home/app/data", "mode": "ro"},
             os.path.abspath("results"): {"bind": "/home/app/results", "mode": "rw"},
         },
+        hostname="cubvec_host",
+        # required to make CUBRID work on network_mode="host"
+        extra_hosts = {
+            "cubvec_host": "127.0.0.1",
+        },
         network_mode="host",
         cpuset_cpus=cpu_limit,
         mem_limit=mem_limit,
