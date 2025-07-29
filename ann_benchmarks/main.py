@@ -186,7 +186,14 @@ def filter_by_available_docker_images(definitions: List[Definition]) -> List[Def
         List[Definition]: A list of algorithm definitions that are associated with available Docker images.
     """
     docker_client = docker.from_env()
-    docker_tags = {tag.split(":")[0] for image in docker_client.images.list() for tag in image.tags}
+
+    def normalize(tag: str) -> str:
+        # Remove 'localhost/' prefix if present
+        if tag.startswith("localhost/"):
+            tag = tag[len("localhost/"):]
+        return tag.split(":")[0]  # only the image name, ignore the tag
+
+    docker_tags = {normalize(tag) for image in docker_client.images.list() for tag in image.tags}
 
     missing_docker_images = set(d.docker_tag for d in definitions).difference(docker_tags)
     if missing_docker_images:
