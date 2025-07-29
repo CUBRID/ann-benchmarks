@@ -187,6 +187,7 @@ def filter_by_available_docker_images(definitions: List[Definition]) -> List[Def
     """
     docker_client = docker.from_env()
 
+    # required to run ann benchmarks in Podman
     def normalize(tag: str) -> str:
         # Remove 'localhost/' prefix if present
         if tag.startswith("localhost/"):
