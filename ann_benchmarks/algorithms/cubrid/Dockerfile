@@ -75,6 +75,7 @@ ENV ANN_BENCHMARKS_CUB_PASSWORD ann
 ENV ANN_BENCHMARKS_CUB_DBNAME ann
 ENV ANN_BENCHMARKS_CUB_HOST localhost
 ENV ANN_BENCHMARKS_CUB_SERVER_PORT 1523
+ENV ANN_BENCHMARKS_CUB_DB_PATH /tmp/ann
 
 # broker port
 ENV ANN_BENCHMARKS_CUB_PORT 33000
@@ -83,15 +84,15 @@ ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
 # required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
 ENV OPENBLAS_NUM_THREADS 1
 
-RUN cd /tmp && \
-    cubrid createdb --db-volume-size=100M --log-volume-size=100M ann en_US.utf8 && \
-    echo "[@ann]" >> $CUBRID/conf/cubrid.conf && \
+RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
+    cubrid createdb --db-volume-size=100M --log-volume-size=100M ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
+    echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
-    cubrid server start ann && \
-    until cubrid server status | grep -q "Server ann"; do \
-        echo "Waiting for 'ann' DB to start..."; \
+    cubrid server start ${ANN_BENCHMARKS_CUB_DBNAME} && \
+    until cubrid server status | grep -q "Server ${ANN_BENCHMARKS_CUB_DBNAME}"; do \
+        echo "Waiting for '${ANN_BENCHMARKS_CUB_DBNAME}' DB to start..."; \
         sleep 1; \
     done && \
     awk ' \

@@ -14,6 +14,7 @@ ANN_BENCHMARKS_CUB_HOST
 ANN_BENCHMARKS_CUB_PORT
 ANN_BENCHMARKS_CUB_SERVER_PORT
 ANN_BENCHMARKS_CUB_NUM_CAS
+ANN_BENCHMARKS_CUB_DB_PATH
 
 This module starts the CUBRID server and broker automatically using the "cubrid"
 command.
@@ -23,9 +24,9 @@ import os
 import subprocess
 import sys
 import time
-import contextlib
 import io
 import CUBRIDdb
+import shutil
 
 from typing import Dict, Any, Optional
 
@@ -51,6 +52,7 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
     if env_var_value is None or len(env_var_value.strip()) == 0:
         return default_value
     return env_var_value
+
 class CUBVEC(BaseANN):
     def __init__(self, metric, method_param):
         self._metric = metric
@@ -75,21 +77,20 @@ class CUBVEC(BaseANN):
 
     def fit(self, X):
         self._prepare_signature(X)
-        self._start_cubrid_services()
+        db_path_name = get_cub_param_env_var_name('DB_PATH')
+        db_path = os.getenv(db_path_name, '/tmp/ann')
+
+        self._write_databases_txt(db_path)
+        success = self._reuse_db(db_path, X)
+        if not success:
+            success = self._create_db(db_path, X)
+
+        if not success:
+            shutil.rmtree(f"{db_path}/db/{self._signature}")
+
+        # restart db to save vector index
+        self._start_cubrid_services("restart")
         conn = self._connect_to_db()
-        cur = self._open_cursor_primitive(conn)
-
-        try:
-            self._prepare_object_files(X)
-            if self._table_exists(cur, self._signature, X.shape[0]):
-                print("Table already exists with correct row count. Skipping.")
-                return
-
-            self._create_table_and_index(cur, X.shape[1])
-            self._insert_data(X)
-        finally:
-            cur.close()
-
         self._cur = self._open_cursor_primitive(conn)
 
     def set_query_arguments(self, ef_search):
@@ -113,6 +114,58 @@ class CUBVEC(BaseANN):
         cur.description = cur._cs.description
 
         return [id for id, in cur.fetchall()]
+
+    def _reuse_db(self, db_path, X) -> bool:
+        success = False
+        try:
+            if self._db_exists(db_path):
+                print("Database already exists. Trying to reuse...")
+
+                # try re-connecting to the existing database
+                self._start_cubrid_services("restart")
+                conn = self._connect_to_db()
+                cur = self._open_cursor_primitive(conn)
+
+                # test the number of rows in the table
+                success = self._table_exists_and_has_correct_count(cur, self._signature, X.shape[0])
+        finally:
+            if not success:
+                try:
+                    self._start_cubrid_services("stop")
+                    shutil.rmtree(f"{db_path}/db/{self._signature}")
+                except Exception as e:
+                    pass
+
+        return success
+
+    def _create_db(self, db_path, X):
+        success = False
+        try:
+            print("Database does not exist. Creating new database...")
+
+            # copy /tmp/ann to /tmp/db/${signature}
+            os.makedirs(f"{db_path}/db/{self._signature}", exist_ok=True)
+
+            # remove the existing database possiblly incomplete data
+            if os.path.exists(f"{db_path}/db/{self._signature}"):
+                shutil.rmtree(f"{db_path}/db/{self._signature}")
+
+            shutil.copytree(f"{db_path}/initdb", f"{db_path}/db/{self._signature}")
+
+            self._start_cubrid_services("start")
+
+            conn = self._connect_to_db()
+            cur = self._open_cursor_primitive(conn)
+
+            self._prepare_object_files(X)
+            self._create_table_and_index(cur, X.shape[1])
+            self._insert_data(X)
+
+            success = True
+        finally:
+            pass
+
+        return success
 
     def _open_connection_primitive(self, host, port, database, user, password):
         url = f"CUBRID:{host}:{port}:{database}:::"
@@ -139,18 +192,35 @@ class CUBVEC(BaseANN):
                                         kwargs['user'],
                                         kwargs['password'])
 
-    def _start_cubrid_services(self):
+    def _start_cubrid_services(self, command):
         try:
-                subprocess.run(["cubrid", "server", "start", "ann"], check=True)
+                subprocess.run(["cubrid", "server", command, "ann"], check=True)
                 print("CUBRID server 'ann' started.")
         except subprocess.CalledProcessError as e:
                 print("Failed to start CUBRID server:", e)
 
         try:
-                subprocess.run(["cubrid", "broker", "start"], check=True)
+                subprocess.run(["cubrid", "broker", command], check=True)
                 print("CUBRID broker started.")
         except subprocess.CalledProcessError as e:
                 print("Failed to start CUBRID broker:", e)
+
+    def _write_databases_txt(self, db_path):
+        # create databases.txt and copy bare database (/tmp/ann) to /tmp/db/${signature}
+        """
+        # db-name        vol-path                db-host         log-path                lob-base-path
+        ann             /tmp/db/${self._signature}     localhost       /tmp/db/${self._signature}     file:/tmp/db/${self._signature}/lob
+        """
+
+        cubrid_databases_path = os.environ['CUBRID_DATABASES']
+        # remove databases.txt if exists
+        if os.path.exists(f"{cubrid_databases_path}/databases.txt"):
+            os.remove(f"{cubrid_databases_path}/databases.txt")
+
+        # create databases.txt
+        with open(f"{cubrid_databases_path}/databases.txt", "w") as f:
+            f.write(f"# db-name        vol-path                db-host         log-path                lob-base-path\n")
+            f.write(f"ann             {db_path}/db/{self._signature}     localhost       {db_path}/db/{self._signature}     file:{db_path}/db/{self._signature}/lob\n")    
 
     def _prepare_signature(self, X):
         total_rows, dim = X.shape
@@ -184,12 +254,22 @@ class CUBVEC(BaseANN):
 
             print(f"Prepared object file for batch {start}-{end}")
 
-    def _table_exists(self, cur, table_name, expected_count) -> bool:
+    def _db_exists(self, db_path) -> bool:
+        # check /tmp/db/signature/ann exists
+        return os.path.exists(f"{db_path}/db/{self._signature}/ann")
+
+    def _table_exists_and_has_correct_count(self, cur, table_name, expected_count) -> bool:
         try:
                 cur.execute(f"SELECT COUNT(*) FROM {table_name}")
                 count = cur.fetchone()[0]
-                return count == expected_count
-        except Exception:
+                if int(count) == int(expected_count):
+                    print(f"[REUSABLE] Table {table_name} exists with {count} rows")
+                    return True
+                else:
+                    print(f"[NON-REUSABLE] Table {table_name} exists with {count} rows, expected {expected_count}")
+                    return False
+        except Exception: 
+                print(f"[NON-REUSABLE] Table {table_name} does not exist")
                 return False
 
     def _create_table_and_index(self, cur, dim):
