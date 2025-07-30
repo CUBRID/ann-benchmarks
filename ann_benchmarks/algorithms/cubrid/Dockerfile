@@ -1,7 +1,5 @@
 FROM ann-benchmarks
 
-ARG BRANCH=origin/cubvec/experiment
-
 RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
@@ -41,6 +39,8 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
 RUN cd /tmp/cubrid && git fetch --all --prune
+
+ARG BRANCH=origin/cubvec/experiment-usearch
 
 USER root
 RUN PRESET=release_avx2 && \
