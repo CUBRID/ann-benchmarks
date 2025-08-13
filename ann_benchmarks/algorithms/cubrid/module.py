@@ -81,7 +81,8 @@ class CUBVEC(BaseANN):
         db_path = os.getenv(db_path_name, '/tmp/ann')
 
         self._write_databases_txt(db_path)
-        success = self._reuse_db(db_path, X)
+        # success = self._reuse_db(db_path, X)
+        success = False
         if not success:
             success = self._create_db(db_path, X)
 
@@ -89,7 +90,7 @@ class CUBVEC(BaseANN):
             shutil.rmtree(f"{db_path}/db/{self._signature}")
 
         # restart db to save vector index
-        self._start_cubrid_services("restart")
+        # self._start_cubrid_services("restart")
         conn = self._connect_to_db()
         self._cur = self._open_cursor_primitive(conn)
 
@@ -158,8 +159,10 @@ class CUBVEC(BaseANN):
             cur = self._open_cursor_primitive(conn)
 
             self._prepare_object_files(X)
-            self._create_table_and_index(cur, X.shape[1])
+            # self._create_table_and_index(cur, X.shape[1])
+            self._create_table(cur, X.shape[1])
             self._insert_data(X)
+            self._create_index(cur, X.shape[1])
 
             success = True
         finally:
@@ -272,10 +275,13 @@ class CUBVEC(BaseANN):
                 print(f"[NON-REUSABLE] Table {table_name} does not exist")
                 return False
 
-    def _create_table_and_index(self, cur, dim):
-        print(f"Creating table and index: {self._signature}")
+    def _create_table(self, cur, dim):
+        print(f"Creating table: {self._signature}")
         cur.execute(f"DROP TABLE IF EXISTS {self._signature};")
         cur.execute(f"CREATE TABLE {self._signature} (id int, embedding vector({dim}));")
+
+    def _create_index(self, cur, dim):
+        print(f"Create vector index: {self._signature}")
 
         idx_stmt = (
                 "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
