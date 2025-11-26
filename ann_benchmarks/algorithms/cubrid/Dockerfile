@@ -1,11 +1,12 @@
 FROM ann-benchmarks
 
-ARG BRANCH=origin/cubvec/experiment
-
-RUN git clone https://github.com/cubrid/cubrid /tmp/cubrid
-RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
+ARG BRANCH=origin/feature/cubvec/hnsw_on_disk
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata
+
+RUN sed -i 's|http://archive.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list
+
 RUN apt-get update && apt-get install -y software-properties-common && add-apt-repository ppa:ubuntu-toolchain-r/test && apt-get update
 RUN apt-get install -y --no-install-recommends build-essential
 RUN apt-get install -y --no-install-recommends wget git cmake systemtap systemtap-sdt-dev flex ninja-build
@@ -40,6 +41,9 @@ ENV CMAKE_VERSION=3.26.3
 RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz | \
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
+RUN git clone https://github.com/hgryoo/cubrid /tmp/cubrid
+RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
+
 RUN cd /tmp/cubrid && git fetch --all --prune
 
 USER root
@@ -48,15 +52,16 @@ RUN PRESET=release_avx2 && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
     git fetch --all && \
-    git checkout ${BRANCH} && \
+    git checkout origin/lab_ann_perf3 && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
-    cmake --build --preset "$PRESET" -j$(nproc) && \
+    cmake --build --preset "$PRESET" -j4 && \
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_DIR"
 
 # do we need to run as cubrid?
 # USER cubrid
 RUN cd /tmp/cubrid-python && \
+    git checkout fix_dash && \
     git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
     git submodule update --init --recursive && \
     cd ./cci-src && ./build.sh && cd .. && \

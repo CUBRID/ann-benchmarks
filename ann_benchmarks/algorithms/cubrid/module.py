@@ -63,9 +63,9 @@ class CUBVEC(BaseANN):
         self._signature = self._signature_base
 
         if metric == "angular":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <c> ? LIMIT 10"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <c> ? LIMIT 5"
         elif metric == "euclidean":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <-> ? LIMIT 10"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <-> ? LIMIT 5"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
@@ -81,15 +81,15 @@ class CUBVEC(BaseANN):
         db_path = os.getenv(db_path_name, '/tmp/ann')
 
         self._write_databases_txt(db_path)
-        success = self._reuse_db(db_path, X)
-        if not success:
-            success = self._create_db(db_path, X)
+        #success = self._reuse_db(db_path, X)
+        #if not success:
+        success = self._create_db(db_path, X)
 
         if not success:
             shutil.rmtree(f"{db_path}/db/{self._signature}")
 
         # restart db to save vector index
-        self._start_cubrid_services("restart")
+        # self._start_cubrid_services("start")
         conn = self._connect_to_db()
         self._cur = self._open_cursor_primitive(conn)
 
@@ -122,7 +122,7 @@ class CUBVEC(BaseANN):
                 print("Database already exists. Trying to reuse...")
 
                 # try re-connecting to the existing database
-                self._start_cubrid_services("restart")
+                self._start_cubrid_services("start")
                 conn = self._connect_to_db()
                 cur = self._open_cursor_primitive(conn)
 
@@ -159,6 +159,18 @@ class CUBVEC(BaseANN):
 
             self._prepare_object_files(X)
             self._create_table_and_index(cur, X.shape[1])
+
+            idx_stmt = (
+                "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
+                "WITH (m = %d, ef_construction = %d);" % (
+                self._signature,
+                self.get_metric_properties()["ops_type"],
+                self._m,
+                self._ef_construction
+                )
+            )
+            cur.execute(idx_stmt)
+
             self._insert_data(X)
 
             success = True
@@ -275,23 +287,14 @@ class CUBVEC(BaseANN):
     def _create_table_and_index(self, cur, dim):
         print(f"Creating table and index: {self._signature}")
         cur.execute(f"DROP TABLE IF EXISTS {self._signature};")
-        cur.execute(f"CREATE TABLE {self._signature} (id int, embedding vector({dim}));")
-
-        idx_stmt = (
-                "CREATE VECTOR INDEX idx_v ON %s(embedding %s) "
-                "WITH (m = %d, ef_construction = %d);" % (
-                self._signature,
-                self.get_metric_properties()["ops_type"],
-                self._m,
-                self._ef_construction
-                )
-        )
-        cur.execute(idx_stmt)
+        cur.execute(f"CREATE TABLE {self._signature} (id int, embedding vector({dim}) );")
 
     def _insert_data(self, X):
         total_rows = X.shape[0]
         batch_size = 50000
         start_time = time.time()
+
+        print(f"test insert")
 
         for start in range(0, total_rows, batch_size):
             end = min(start + batch_size, total_rows)
