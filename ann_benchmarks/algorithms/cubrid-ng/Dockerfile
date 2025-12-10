@@ -1,10 +1,8 @@
 FROM ann-benchmarks
 
+ARG BRANCH=origin/lab_ann_perf
+
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata
-
-RUN sed -i 's|http://archive.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list
-
 RUN apt-get update && apt-get install -y software-properties-common && add-apt-repository ppa:ubuntu-toolchain-r/test && apt-get update
 RUN apt-get install -y --no-install-recommends build-essential
 RUN apt-get install -y --no-install-recommends wget git cmake systemtap systemtap-sdt-dev flex ninja-build
@@ -42,21 +40,18 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 RUN git clone https://github.com/hgryoo/cubrid /tmp/cubrid
 RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
-RUN cd /tmp/cubrid
+RUN cd /tmp/cubrid && git fetch --all --prune
 
 USER root
-
-ARG BRANCH=feature/cubvec/hnsw-on-disk2
-
 RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
-    git fetch origin && \
-    git checkout "${BRANCH}" && \
+    git fetch --all && \
+    git checkout origin/lab_ann_perf3 && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
-    cmake --build --preset "$PRESET" -j4 && \
+    cmake --build --preset "$PRESET" -j$(nproc) && \
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_DIR"
 
 # do we need to run as cubrid?
@@ -90,8 +85,8 @@ ENV ANN_BENCHMARKS_CUB_NUM_CAS 50
 # required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
 ENV OPENBLAS_NUM_THREADS 1
 
-RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
-    cubrid createdb --db-volume-size=100M --log-volume-size=100M ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
+RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb
+RUN cubrid deletedb ${ANN_BENCHMARKS_CUB_DBNAME} || cubrid createdb --db-volume-size=100M --log-volume-size=100M ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf
 
