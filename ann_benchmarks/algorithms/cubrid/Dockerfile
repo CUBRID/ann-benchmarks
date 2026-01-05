@@ -19,6 +19,18 @@ RUN apt-get install -y --no-install-recommends libelf-dev
 RUN apt-get install -y --no-install-recommends libtool m4 curl
 RUN apt-get install -y --no-install-recommends libfl-dev # flexlexer.h
 
+# perf
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    linux-tools-common \
+    linux-tools-generic \
+    linux-cloud-tools-generic \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libdw-dev \
+    binutils \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV MAKEFLAGS -j80
 
 # Install Bison 3.0.5 manually
@@ -47,13 +59,14 @@ RUN cd /tmp/cubrid
 USER root
 
 ARG BRANCH=feature/cubvec/hnsw-on-disk2
+ARG GIT_COMMIT
 
 RUN PRESET=release_avx2 && \
     BUILD_DIR="build_preset_${PRESET}" && \
     INSTALL_DIR="/tmp/cubrid_install" && \
     cd /tmp/cubrid && \
     git fetch origin && \
-    git checkout "${BRANCH}" && \
+    git checkout ${GIT_COMMIT} && \
     git submodule update --init cubrid-cci && \
     cmake --preset "$PRESET" && \
     cmake --build --preset "$PRESET" -j4 && \
@@ -62,10 +75,10 @@ RUN PRESET=release_avx2 && \
 # do we need to run as cubrid?
 # USER cubrid
 RUN cd /tmp/cubrid-python && \
-    git checkout fix_dash && \
+    git checkout develop && \
     git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
     git submodule update --init --recursive && \
-    cd ./cci-src && ./build.sh && cd .. && \
+    ln -sf /bin/bash /bin/sh && \
     python setup.py build && \
     python setup.py install
 

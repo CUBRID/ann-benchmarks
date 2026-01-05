@@ -62,12 +62,28 @@ class CUBVEC(BaseANN):
         self._signature_base = metric + "_" + str(self._m) + "_" + str(self._ef_construction)
         self._signature = self._signature_base
 
+        self._perf_pid = None
+
         if metric == "angular":
             self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <c> ? LIMIT 5"
         elif metric == "euclidean":
             self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <-> ? LIMIT 5"
         else:
             raise RuntimeError(f"unknown metric {metric}")
+
+    def _start_perf_marker(self, phase: str):
+        pid = self.get_cubrid_server_pid("ann")
+        print(f"[PERF_HINT] START phase={phase} pid={pid}", flush=True)
+
+    def _stop_perf_marker(self, phase: str):
+        pid = self._perf_pid
+        print(f"[PERF_HINT] STOP phase={phase} pid={pid}", flush=True)
+        self._perf_pid = None
+
+    def done(self) -> None:
+        if self._perf_pid:
+          self._stop_perf_marker("build")
+        pass
 
     def get_metric_properties(self) -> Dict[str, str]:
         if self._metric not in METRIC_PROPERTIES:
@@ -76,6 +92,9 @@ class CUBVEC(BaseANN):
         return METRIC_PROPERTIES[self._metric]
 
     def fit(self, X):
+        if self._perf_pid != None:
+          self._stop_perf_marker("build")
+
         self._prepare_signature(X)
         db_path_name = get_cub_param_env_var_name('DB_PATH')
         db_path = os.getenv(db_path_name, '/tmp/ann')
@@ -92,6 +111,9 @@ class CUBVEC(BaseANN):
         # self._start_cubrid_services("start")
         conn = self._connect_to_db()
         self._cur = self._open_cursor_primitive(conn)
+
+        self._perf_pid = self.get_cubrid_server_pid("ann")
+        self._start_perf_marker("build")
 
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
@@ -171,7 +193,8 @@ class CUBVEC(BaseANN):
             )
             cur.execute(idx_stmt)
 
-            self._insert_data_sql(cur, X)
+            #self._insert_data_sql(cur, X)
+            self._insert_data(X)
 
             success = True
         finally:
@@ -344,6 +367,17 @@ class CUBVEC(BaseANN):
                 raise
 
         print("Total insert time: {:.3f} sec".format(time.time() - start_time))
+
+    def get_cubrid_server_pid(self, dbname):
+        out = subprocess.check_output(
+            ["cubrid", "server", "status"],
+            text=True
+        )
+        for line in out.splitlines():
+            if f"Server {dbname}" in line:
+                # 예: Server ann (pid 12345)
+                return int(line.split("pid")[1].strip(" )"))
+        raise RuntimeError("CUBRID server PID not found")
 
     def __str__(self):
         return f"CUBVEC(m={self._m}, ef_construction={self._ef_construction}, ef_search={self._ef_search})"
