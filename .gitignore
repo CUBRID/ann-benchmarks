@@ -12,8 +12,11 @@ data/*
 *.log
 
 results/*
-!results/*.png
+results/*.png
 
 venv
 
 .idea
+
+.websites/*
+*.lock
