@@ -69,7 +69,6 @@ def run_individual_query(algo: BaseANN, X_train: numpy.array, X_test: numpy.arra
 
             # make sure all returned indices are unique
             assert len(candidates) == len(set(candidates)), "Implementation returned duplicated candidates"
-
             candidates = [
                 (int(idx), float(metrics[distance].distance(v, X_train[idx]))) for idx in candidates  # noqa
             ]
@@ -331,22 +330,30 @@ def run_docker(
     container = client.containers.run(
         definition.docker_tag,
         cmd,
+        labels={
+          "annb.role": "benchmark",
+          "annb.algo": definition.algorithm
+        },
         volumes={
             os.path.abspath("/var/run/docker.sock"): {"bind": "/var/run/docker.sock", "mode": "rw"},
             os.path.abspath("ann_benchmarks"): {"bind": "/home/app/ann_benchmarks", "mode": "ro"},
             os.path.abspath("data"): {"bind": "/home/app/data", "mode": "ro"},
             os.path.abspath("results"): {"bind": "/home/app/results", "mode": "rw"},
+            os.path.abspath("/tmp/perf"): {"bind": "/tmp/perf", "mode": "rw"}
         },
         hostname="cubvec_host",
         # required to make CUBRID work on network_mode="host"
         extra_hosts = {
             "cubvec_host": "127.0.0.1",
         },
+        privileged=True,
+        pid_mode="host",
         network_mode="host",
         cpuset_cpus=cpu_limit,
         mem_limit=mem_limit,
         detach=True,
     )
+
     logger = logging.getLogger(f"annb.{container.short_id}")
 
     logger.info(
