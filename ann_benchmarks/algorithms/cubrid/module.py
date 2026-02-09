@@ -59,30 +59,25 @@ class CUBVEC(BaseANN):
         self._m = method_param['M']
         self._ef_construction = method_param['efConstruction']
         self._cur = None
-        self._signature_base = metric + "_" + str(self._m) + "_" + str(self._ef_construction)
-        self._signature = self._signature_base
 
+        # for perf
         self._perf_pid = None
 
         if metric == "angular":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <c> ? LIMIT 5"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <c> ? LIMIT 10"
         elif metric == "euclidean":
-            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM {} ORDER BY embedding <-> ? LIMIT 5"
+            self._query = "SELECT /*+ no_parallel_heap_scan */ id FROM items ORDER BY embedding <-> ? LIMIT 10"
         else:
             raise RuntimeError(f"unknown metric {metric}")
 
-    def _start_perf_marker(self, phase: str):
-        pid = self.get_cubrid_server_pid("ann")
-        print(f"[PERF_HINT] START phase={phase} pid={pid}", flush=True)
-
-    def _stop_perf_marker(self, phase: str):
-        pid = self._perf_pid
-        print(f"[PERF_HINT] STOP phase={phase} pid={pid}", flush=True)
-        self._perf_pid = None
-
     def done(self) -> None:
         if self._perf_pid:
-          self._stop_perf_marker("build")
+          self._stop_perf_marker("query")
+
+          self._print_statdump("hnsw")
+          self._print_statdump("page")
+
+          self._perf_pid = None
         pass
 
     def get_metric_properties(self) -> Dict[str, str]:
@@ -93,19 +88,11 @@ class CUBVEC(BaseANN):
 
     def fit(self, X):
         if self._perf_pid != None:
-          self._stop_perf_marker("build")
+          self._stop_perf_marker("query")
 
-        self._prepare_signature(X)
-        db_path_name = get_cub_param_env_var_name('DB_PATH')
-        db_path = os.getenv(db_path_name, '/tmp/ann')
-
-        self._write_databases_txt(db_path)
-        #success = self._reuse_db(db_path, X)
-        #if not success:
-        success = self._create_db(db_path, X)
-
-        if not success:
-            shutil.rmtree(f"{db_path}/db/{self._signature}")
+        success = self._create_db(X)
+        if success:
+            print("Failed to create database")
 
         # restart db to save vector index
         # self._start_cubrid_services("start")
@@ -113,14 +100,13 @@ class CUBVEC(BaseANN):
         self._cur = self._open_cursor_primitive(conn)
 
         self._perf_pid = self.get_cubrid_server_pid("ann")
-        self._start_perf_marker("build")
+        self._start_perf_marker("query")
 
     def set_query_arguments(self, ef_search):
         self._ef_search = ef_search
         self._cur.execute("SET SYSTEM PARAMETERS 'hnsw_ef_search=%d'" % ef_search)
 
-        query_str = self._query.format(self._signature)
-        self._cur._cs.prepare(query_str)
+        self._cur._cs.prepare(self._query)
 
     def query(self, v, n):
         vector_str = "[" + ",".join(map(str, v)) + "]"
@@ -135,44 +121,18 @@ class CUBVEC(BaseANN):
         cur.rowcount = cur._cs.rowcount
         cur.description = cur._cs.description
 
-        return [id for id, in cur.fetchall()]
+        rows = cur.fetchall()
 
-    def _reuse_db(self, db_path, X) -> bool:
-        success = False
-        try:
-            if self._db_exists(db_path):
-                print("Database already exists. Trying to reuse...")
+        #for i, (id,) in enumerate(rows):
+        #    if id is None:
+        #        print(f"[DEBUG] NULL id at row {i}")
 
-                # try re-connecting to the existing database
-                self._start_cubrid_services("start")
-                conn = self._connect_to_db()
-                cur = self._open_cursor_primitive(conn)
+        return [id for (id,) in rows if id is not None]
 
-                # test the number of rows in the table
-                success = self._table_exists_and_has_correct_count(cur, self._signature, X.shape[0])
-        finally:
-            if not success:
-                try:
-                    self._start_cubrid_services("stop")
-                    shutil.rmtree(f"{db_path}/db/{self._signature}")
-                except Exception as e:
-                    pass
-
-        return success
-
-    def _create_db(self, db_path, X):
+    def _create_db(self, X):
         success = False
         try:
             print("Database does not exist. Creating new database...")
-
-            # copy /tmp/ann to /tmp/db/${signature}
-            os.makedirs(f"{db_path}/db/{self._signature}", exist_ok=True)
-
-            # remove the existing database possiblly incomplete data
-            if os.path.exists(f"{db_path}/db/{self._signature}"):
-                shutil.rmtree(f"{db_path}/db/{self._signature}")
-
-            shutil.copytree(f"{db_path}/initdb", f"{db_path}/db/{self._signature}")
 
             self._start_cubrid_services("start")
 
@@ -182,10 +142,16 @@ class CUBVEC(BaseANN):
             self._prepare_object_files(X)
             self._create_table_and_index(cur, X.shape[1])
 
+            start_time = time.time()
+            self._insert_data(X)
+
+            print("Total inserting data time: {:.3f} sec".format(time.time() - start_time))
+
+            self._perf_pid = self.get_cubrid_server_pid("ann")
+            self._start_perf_marker("build")
             idx_stmt = (
-                "CREATE VECTOR INDEX vidx_v ON %s(embedding %s) "
+                "CREATE VECTOR INDEX vidx_v ON items(embedding %s) "
                 "WITH (m = %d, ef_construction = %d);" % (
-                self._signature,
                 self.get_metric_properties()["ops_type"],
                 self._m,
                 self._ef_construction
@@ -193,8 +159,12 @@ class CUBVEC(BaseANN):
             )
             cur.execute(idx_stmt)
 
-            #self._insert_data_sql(cur, X)
-            self._insert_data(X)
+            print("Total building index time: {:.3f} sec".format(time.time() - start_time))
+
+            self._stop_perf_marker("build")
+
+            self._print_statdump("hnsw")
+            self._print_statdump("page")
 
             success = True
         finally:
@@ -240,36 +210,14 @@ class CUBVEC(BaseANN):
         except subprocess.CalledProcessError as e:
                 print("Failed to start CUBRID broker:", e)
 
-    def _write_databases_txt(self, db_path):
-        # create databases.txt and copy bare database (/tmp/ann) to /tmp/db/${signature}
-        """
-        # db-name        vol-path                db-host         log-path                lob-base-path
-        ann             /tmp/db/${self._signature}     localhost       /tmp/db/${self._signature}     file:/tmp/db/${self._signature}/lob
-        """
-
-        cubrid_databases_path = os.environ['CUBRID_DATABASES']
-        # remove databases.txt if exists
-        if os.path.exists(f"{cubrid_databases_path}/databases.txt"):
-            os.remove(f"{cubrid_databases_path}/databases.txt")
-
-        # create databases.txt
-        with open(f"{cubrid_databases_path}/databases.txt", "w") as f:
-            f.write(f"# db-name        vol-path                db-host         log-path                lob-base-path\n")
-            f.write(f"ann             {db_path}/db/{self._signature}     localhost       {db_path}/db/{self._signature}     file:{db_path}/db/{self._signature}/lob\n")    
-
-    def _prepare_signature(self, X):
-        total_rows, dim = X.shape
-        if self._signature == self._signature_base:
-                self._signature += f"_{total_rows}_{dim}"
-
     def _prepare_object_files(self, X):
         total_rows, dim = X.shape
         batch_size = 50000
-        header = f"%id {self._signature} 0\n%class {self._signature} ([id] [embedding])\n"
+        header = f"%id items 0\n%class items ([id] [embedding])\n"
 
         for start in range(0, total_rows, batch_size):
             end = min(start + batch_size, total_rows)
-            object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+            object_file_path = f"/tmp/items_object_{start}_{end}"
             if os.path.exists(object_file_path + ".flag"):
                 print(f"Skipping batch {start}-{end}")
                 continue
@@ -289,10 +237,7 @@ class CUBVEC(BaseANN):
 
             print(f"Prepared object file for batch {start}-{end}")
 
-    def _db_exists(self, db_path) -> bool:
-        # check /tmp/db/signature/ann exists
-        return os.path.exists(f"{db_path}/db/{self._signature}/ann")
-
+    # for debugging
     def _table_exists_and_has_correct_count(self, cur, table_name, expected_count) -> bool:
         try:
                 cur.execute(f"SELECT COUNT(*) FROM {table_name}")
@@ -308,22 +253,20 @@ class CUBVEC(BaseANN):
                 return False
 
     def _create_table_and_index(self, cur, dim):
-        print(f"Creating table and index: {self._signature}")
-        cur.execute(f"DROP TABLE IF EXISTS {self._signature};")
-        cur.execute(f"CREATE TABLE {self._signature} (id int, embedding vector({dim}) );")
+        print(f"Creating table and index: items")
+        cur.execute(f"DROP TABLE IF EXISTS items;")
+        cur.execute(f"CREATE TABLE items (id int, embedding vector({dim}) );")
     
+    # for debugging
     def _insert_data_sql(self, cur, X):
         total_rows = X.shape[0]
-        start_time = time.time()
-
-        print(f"test insert sql")
 
         for i in range(total_rows):
                 vec = X[i]
                 vector_str = "'[" + ",".join(map(str, vec)) + "]'"
 
                 sql = (
-                    f"INSERT INTO {self._signature} "
+                    f"INSERT INTO items "
                     f"VALUES ({i}, {vector_str})"
                 )
 
@@ -337,18 +280,15 @@ class CUBVEC(BaseANN):
                     print(f"INSERT failed at row {i}: {e}")
                     raise
 
-        print("Total insert time: {:.3f} sec".format(time.time() - start_time))
-
     def _insert_data(self, X):
         total_rows = X.shape[0]
         batch_size = 50000
-        start_time = time.time()
 
         print(f"test insert")
 
         for start in range(0, total_rows, batch_size):
             end = min(start + batch_size, total_rows)
-            object_file_path = f"/tmp/{self._signature}_object_{start}_{end}"
+            object_file_path = f"/tmp/items_object_{start}_{end}"
             try:
                 subprocess.run([
                     "cubrid", "loaddb",
@@ -356,18 +296,39 @@ class CUBVEC(BaseANN):
                     "-u", "ann",
                     "-p", "ann",
                     "-d", object_file_path,
-                    "-c", str(batch_size),
+                    "-c", str(int(batch_size / 5)),
                     "--estimated-size", str(batch_size),
                     "--no-statistics",
                     "--no-user-specified-name"
-                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                ], check=True)
                 print(f"Inserted rows {start}-{end}")
             except subprocess.CalledProcessError as e:
                 print("loaddb failed with error:\n", e.stderr)
                 raise
 
-        print("Total insert time: {:.3f} sec".format(time.time() - start_time))
+    def _print_statdump(self, q_str):
+        try:
+            subprocess.run([
+                "cubrid", "statdump",
+                "-s", q_str,
+                "-c",
+                get_cub_conn_param('dbname', 'ann')
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            print("statdump failed with error:\n", e.stderr)
+            raise
 
+    # for perf
+    def _start_perf_marker(self, phase: str):
+        pid = self._perf_pid
+        print(f"[PERF_HINT] START phase={phase} pid={pid}", flush=True)
+
+    # for perf
+    def _stop_perf_marker(self, phase: str):
+        pid = self._perf_pid
+        print(f"[PERF_HINT] STOP phase={phase} pid={pid}", flush=True)
+
+    # for perf
     def get_cubrid_server_pid(self, dbname):
         out = subprocess.check_output(
             ["cubrid", "server", "status"],
