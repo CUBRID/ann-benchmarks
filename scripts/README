@@ -1,14 +1,25 @@
 ## Prerequisites
 
-- perf
 - uv
 - docker
+- perf
 - Flamegraph
 
 ## Getting started
 
 ### Install
+- install_cubrid.sh
+- install_pgvector.sh
 
 ### Test
+- test.sh
 
 ### Perf
+- perf_watch_annb.sh
+- perf_report.sh
+
+### Deploy website
+- serve_website.sh
+
+### Misc
+- docker_connect_cubrid.sh
