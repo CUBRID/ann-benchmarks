@@ -27,6 +27,7 @@ import time
 import io
 import CUBRIDdb
 import shutil
+import signal
 
 from typing import Dict, Any, Optional
 
@@ -60,6 +61,10 @@ class CUBVEC(BaseANN):
         self._ef_construction = method_param['efConstruction']
         self._cur = None
 
+        # for statdump
+        self._statdump_mode = True
+        self._statdump_proc = None
+
         # for perf
         self._perf_pid = None
 
@@ -74,11 +79,11 @@ class CUBVEC(BaseANN):
         if self._perf_pid:
           self._stop_perf_marker("query")
 
-          self._print_statdump("hnsw")
-          self._print_statdump("page")
+        if self._statdump_mode:
+          statdump = self._stop_and_collect_statdump("query")
+          print(statdump)
 
-          self._perf_pid = None
-        pass
+        self._perf_pid = None
 
     def get_metric_properties(self) -> Dict[str, str]:
         if self._metric not in METRIC_PROPERTIES:
@@ -92,12 +97,19 @@ class CUBVEC(BaseANN):
 
         success = self._create_db(X)
         if success:
-            print("Failed to create database")
+          print("Database created successfully")
+        else:
+          print("Failed to create database")
 
         # restart db to save vector index
         # self._start_cubrid_services("start")
         conn = self._connect_to_db()
         self._cur = self._open_cursor_primitive(conn)
+
+        if self._statdump_mode:
+          self._statdump_proc = self._run_statdump("query")
+          if self._statdump_proc is None:
+            print("Failed to run statdump for query")
 
         self._perf_pid = self.get_cubrid_server_pid("ann")
         self._start_perf_marker("query")
@@ -136,6 +148,11 @@ class CUBVEC(BaseANN):
 
             self._start_cubrid_services("start")
 
+            if self._statdump_mode:
+              self._statdump_proc = self._run_statdump("build")
+              if self._statdump_proc is None:
+                print("Failed to run statdump for build")
+
             conn = self._connect_to_db()
             cur = self._open_cursor_primitive(conn)
 
@@ -161,10 +178,11 @@ class CUBVEC(BaseANN):
 
             print("Total building index time: {:.3f} sec".format(time.time() - start_time))
 
-            self._stop_perf_marker("build")
+            if self._statdump_mode:
+              statdump = self._stop_and_collect_statdump("build")
+              print(statdump)
 
-            self._print_statdump("hnsw")
-            self._print_statdump("page")
+            self._stop_perf_marker("build")
 
             success = True
         finally:
@@ -317,6 +335,62 @@ class CUBVEC(BaseANN):
         except subprocess.CalledProcessError as e:
             print("statdump failed with error:\n", e.stderr)
             raise
+
+    def _run_statdump(self, q_str):
+        proc = subprocess.Popen(
+            [
+                "cubrid", "statdump",
+                "-i", "10",
+                "-c", 
+                "-o", f"/tmp/statdump_{q_str}.txt",
+                get_cub_conn_param('dbname', 'ann')
+            ],
+            text=True
+        )
+
+        return proc
+
+    def _stop_and_collect_statdump(self, q_str):
+        if self._statdump_proc is None:
+            return "No statdump process"
+
+        if self._statdump_proc.poll() is None:
+            self._statdump_proc.send_signal(signal.SIGINT)
+            self._statdump_proc.wait()
+
+        with open(f"/tmp/statdump_{q_str}.txt", "r") as f:
+            text = f.read()
+
+        last = self._extract_last_block(text)
+        if last is None:
+            return "No text"
+        filtered = self._filter_hnsw_page(last)
+
+        # delete the file
+        os.remove(f"/tmp/statdump_{q_str}.txt")
+
+        self._statdump_proc = None
+        return filtered
+
+    def _extract_last_block(self, text):
+        blocks = text.split("*** SERVER EXECUTION STATISTICS ***")
+
+        if len(blocks) < 2:
+            return None
+
+        last = blocks[-1]
+        return "*** SERVER EXECUTION STATISTICS ***" + last
+
+    def _filter_hnsw_page(self, block: str) -> str:
+        if not block:
+            return ""
+
+        lines = block.splitlines()
+        filtered = [
+            line for line in lines
+            if ("hnsw" in line or "page" in line)
+        ]
+        return "\n".join(filtered)
 
     # for perf
     def _start_perf_marker(self, phase: str):
