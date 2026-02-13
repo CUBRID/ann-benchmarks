@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+sudo -v
+
 # script dir: <root>/scripts
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
