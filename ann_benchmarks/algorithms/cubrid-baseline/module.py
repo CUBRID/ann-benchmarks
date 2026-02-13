@@ -53,7 +53,7 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
         return default_value
     return env_var_value
 
-class CUBVEC(BaseANN):
+class CUBVEC_BASE(BaseANN):
     def __init__(self, metric, method_param):
         self._metric = metric
         self._m = method_param['M']
