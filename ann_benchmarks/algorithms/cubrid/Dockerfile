@@ -119,7 +119,8 @@ RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_
     echo "sort_buffer_size=64M" >> $CUBRID/conf/cubrid.conf && \
     echo "double_write_buffer_size=0" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
-    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf
+    echo "temp_file_memory_size_in_pages=20" >> $CUBRID/conf/cubrid.conf && \
+    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
     cubrid server start ${ANN_BENCHMARKS_CUB_DBNAME} && \
