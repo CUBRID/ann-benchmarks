@@ -41,18 +41,22 @@ flamegraph.pl "$OUT_DIR/folded/${base}.folded" \
   > "$OUT_DIR/flame/${base}.svg"
 
 {
-  echo "==== $base ===="
   echo "--- Top functions ---"
-  perf report --stdio -i "$f" --sort symbol --percent-limit 1
+  sudo perf report --stdio -i "$f" --sort symbol --percent-limit 1 -f
+} > "$OUT_DIR/perf_txt/${base}_top.txt"
+
+{
   echo
   echo "--- Call graph ---"
-  perf report --stdio -i "$f" -g graph --percent-limit 2
+  sudo perf report --stdio -i "$f" -g graph --percent-limit 2 -f
+} > "$OUT_DIR/perf_txt/${base}_call_graph.txt"
+
+{
   echo
   echo "--- DSOs ---"
-  perf report --stdio -i "$f" --sort dso --percent-limit 1
+  sudo perf report --stdio -i "$f" --sort dso --percent-limit 1 -f
+} > "$OUT_DIR/perf_txt/${base}_dso.txt"
 
   # echo "--- branch/cache events ---"
   #perf report --stdio -i "$f" -e branch-misses --sort symbol --percent-limit 1
   # perf report --stdio -i "$f" -e cache-misses  --sort symbol --percent-limit 1
-
-} > "$OUT_DIR/perf_txt/${base}.txt"
