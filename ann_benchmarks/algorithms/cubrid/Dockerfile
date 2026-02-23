@@ -62,6 +62,8 @@ RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
 
 RUN cd /tmp/cubrid
 
+ARG BRANCH=origin/cubvec/experiment-usearch
+
 USER root
 
 RUN BUILD_DIR="build_preset_${PRESET}" && \
