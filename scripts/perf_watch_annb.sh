@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+sudo -v
+
 # script dir: <root>/scripts
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -33,10 +35,12 @@ while read -r _ _ _ cid _; do
     out="$OUT_BASE/perf_${cid}_${phase}.data"
     pidfile="/tmp/perf_${cid}_${phase}.pid"
 
+    touch "$out"
+
     if [[ "$action" == "START" ]]; then
       echo "[perf] START perf pid=$pid phase=$phase"
 
-      perf record \
+      sudo perf record \
         -e cycles,instructions,branches,branch-misses,cache-references,cache-misses \
         -F 99 \
         -g \
