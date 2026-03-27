@@ -52,13 +52,17 @@ ENV CMAKE_VERSION=3.26.3
 RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz | \
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
-ARG GIT_REMOTE_URL=https://github.com/CUBRID/cubrid.git
-ARG GIT_BRANCH=cubvec/cubvec
+ARG GIT_REMOTE_URL=https://github.com/hgryoo/cubrid.git
+ARG GIT_BRANCH=cubvec/m1-nv
+ARG PYTHON_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-python.git
+ARG PYTHON_GIT_BRANCH=cubvec/m1-nv
+ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci.git
+ARG CCI_GIT_BRANCH=cubvec/m1-nv
 ARG GIT_COMMIT=
 ARG PRESET=release_avx2
 
 RUN git clone ${GIT_REMOTE_URL} /tmp/cubrid
-RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
+RUN git clone ${PYTHON_GIT_REMOTE_URL} /tmp/cubrid-python
 
 RUN cd /tmp/cubrid
 
@@ -77,7 +81,12 @@ RUN BUILD_DIR="build_preset_${PRESET}" && \
         echo "Checkout branch: origin/$GIT_BRANCH" && \
         git checkout --detach "origin/$GIT_BRANCH"; \
     fi && \
+    git submodule set-url cubrid-cci ${CCI_GIT_REMOTE_URL} && \
     git submodule update --init cubrid-cci && \
+    cd /tmp/cubrid/cubrid-cci && \
+    git fetch origin && \
+    git checkout --detach "origin/${CCI_GIT_BRANCH}" && \
+    cd /tmp/cubrid && \
     cmake --preset "$PRESET" -DENABLE_SYSTEMTAP=OFF && \
     cmake --build --preset "$PRESET" -j4 && \
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_DIR"
@@ -85,9 +94,14 @@ RUN BUILD_DIR="build_preset_${PRESET}" && \
 # do we need to run as cubrid?
 # USER cubrid
 RUN cd /tmp/cubrid-python && \
-    git checkout develop && \
-    git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
+    git fetch origin && \
+    git checkout --detach "origin/${PYTHON_GIT_BRANCH}" && \
+    git submodule set-url cci-src ${CCI_GIT_REMOTE_URL} && \
     git submodule update --init --recursive && \
+    cd /tmp/cubrid-python/cci-src && \
+    git fetch origin && \
+    git checkout --detach "origin/${CCI_GIT_BRANCH}" && \
+    cd /tmp/cubrid-python && \
     ln -sf /bin/bash /bin/sh && \
     python setup.py build && \
     python setup.py install

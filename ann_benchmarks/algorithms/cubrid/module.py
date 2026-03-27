@@ -120,14 +120,9 @@ class CUBVEC(BaseANN):
         self._cur._cs.prepare(self._query)
 
     def query(self, v, n):
-        vector_str = "[" + ",".join(map(str, v)) + "]"
         cur = self._cur
 
-        # args = [vector_str, n] # this reduces QPS from 3500 to 600
-        args = [vector_str]
-        set_type = None
-        if args is not None:
-            cur._bind_params(args, set_type)
+        cur._cs.bind_param(1, v, CUBRIDdb.FIELD_TYPE.VECTOR)
         r = cur._cs.execute()
         cur.rowcount = cur._cs.rowcount
         cur.description = cur._cs.description
