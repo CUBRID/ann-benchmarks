@@ -4,7 +4,7 @@ set -euo pipefail
 # defaults
 GIT_REMOTE_URL=""
 GIT_COMMIT=""
-GIT_BRANCH="cubvec/cubvec"
+GIT_BRANCH=""
 
 usage() {
   echo "Usage:"

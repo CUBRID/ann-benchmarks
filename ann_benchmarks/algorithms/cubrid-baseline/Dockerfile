@@ -1,9 +1,7 @@
 FROM ann-benchmarks
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's|http://archive.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tzdata \
         software-properties-common \

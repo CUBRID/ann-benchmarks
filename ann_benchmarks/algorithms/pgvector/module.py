@@ -325,11 +325,12 @@ class PGVector(BaseANN):
         finally:
             progress_monitor.stop_monitoring_thread()
         print("done!")
+        
         progress_monitor.report_timings()
 
-        cur.execute ("SELECT get_call_cnt ()");
-        stat_str = "STAT: %s" % (cur.fetchone ())
-        print (stat_str)
+        #cur.execute ("SELECT get_call_cnt ()");
+        #stat_str = "STAT: %s" % (cur.fetchone ())
+        #print (stat_str)
 
         self._cur = cur
 
@@ -348,9 +349,7 @@ class PGVector(BaseANN):
         return self._cur.fetchone()[0] / 1024
 
     def done(self) -> None:
-        self._cur.execute ("SELECT get_call_cnt ()");
-        stat_str = "STAT: %s" % (self._cur.fetchone ())
-        print (stat_str)
+        pass        
 
     def __str__(self):
         return f"PGVector(m={self._m}, ef_construction={self._ef_construction}, ef_search={self._ef_search})"

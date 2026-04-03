@@ -1,9 +1,7 @@
 FROM ann-benchmarks
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's|http://archive.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tzdata \
         software-properties-common \
@@ -56,7 +54,7 @@ ARG GIT_REMOTE_URL=https://github.com/hgryoo/cubrid.git
 ARG GIT_BRANCH=cubvec/m1-nv
 ARG PYTHON_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-python.git
 ARG PYTHON_GIT_BRANCH=cubvec/m1-nv
-ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci.git
+ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci
 ARG CCI_GIT_BRANCH=cubvec/m1-nv
 ARG GIT_COMMIT=
 ARG PRESET=release_avx2
@@ -136,7 +134,9 @@ RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_
     echo "double_write_buffer_size=0" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
     echo "temp_file_memory_size_in_pages=20" >> $CUBRID/conf/cubrid.conf && \
-    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
+    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf && \
+    echo "checkpoint_interval=6h" >> $CUBRID/conf/cubrid.conf && \
+    echo "loaddb_worker_count=2" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
     cubrid server start ${ANN_BENCHMARKS_CUB_DBNAME} && \

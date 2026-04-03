@@ -61,7 +61,7 @@ class CUBVEC_BASE(BaseANN):
         self._cur = None
 
         # for statdump
-        self._statdump_mode = True
+        self._statdump_mode = False
         self._statdump_proc = None
 
         # for perf
