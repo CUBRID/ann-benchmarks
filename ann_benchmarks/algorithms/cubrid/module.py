@@ -145,13 +145,15 @@ class CUBVEC(BaseANN):
             conn = self._connect_to_db()
             cur = self._open_cursor_primitive(conn)
 
+            prepare_start = time.time()
             self._prepare_object_files(X)
+            print("Prepare object files time: {:.3f} sec".format(time.time() - prepare_start))
+
             self._create_table_and_index(cur, X.shape[1])
 
-            start_time = time.time()
+            insert_start = time.time()
             self._insert_data(X)
-
-            print("Total inserting data time: {:.3f} sec".format(time.time() - start_time))
+            print("Insert data time: {:.3f} sec".format(time.time() - insert_start))
 
             if self._statdump_mode:
               self._statdump_proc = self._run_statdump("build")
@@ -168,9 +170,9 @@ class CUBVEC(BaseANN):
                 self._ef_construction
                 )
             )
+            index_start = time.time()
             cur.execute(idx_stmt)
-
-            print("Total building index time: {:.3f} sec".format(time.time() - start_time))
+            print("Index build time: {:.3f} sec".format(time.time() - index_start))
 
             if self._statdump_mode:
               statdump = self._stop_and_collect_statdump("build")
