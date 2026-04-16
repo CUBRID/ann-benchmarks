@@ -1,0 +1,46 @@
+## Prerequisites
+
+- uv
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv --python 3.12.0
+uv pip install -r requirements.txt
+```
+
+- docker
+- perf
+- Flamegraph
+
+## Getting started
+
+### Install
+- install_cubrid.sh
+- install_pgvector.sh
+
+### Test
+- test.sh
+
+- How to find dataset?
+
+You can find dataset's name at the end of dataset.py
+```
+cat dataset.py
+```
+
+### Perf
+- perf_watch_annb.sh
+- perf_report.sh
+
+### Deploy website
+- serve_website.sh
+
+### Misc
+- docker_connect_cubrid.sh
+
+
+## Trobuleshooting
+
+- Disk usage
+```
+docker system prune
+```

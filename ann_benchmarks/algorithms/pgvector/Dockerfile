@@ -2,7 +2,8 @@ FROM ann-benchmarks
 
 # https://github.com/pgvector/pgvector/blob/master/Dockerfile
 
-RUN git clone https://github.com/pgvector/pgvector /tmp/pgvector
+RUN git clone https://github.com/hgryoo/pgvector /tmp/pgvector
+RUN cd /tmp/pgvector && git fetch origin && git checkout 3adb250 && cd -
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential postgresql-common

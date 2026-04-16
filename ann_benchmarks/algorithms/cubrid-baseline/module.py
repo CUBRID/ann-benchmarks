@@ -53,7 +53,7 @@ def get_cub_conn_param(cub_param_name: str, default_value: Optional[str] = None)
         return default_value
     return env_var_value
 
-class CUBVEC(BaseANN):
+class CUBVEC_BASE(BaseANN):
     def __init__(self, metric, method_param):
         self._metric = metric
         self._m = method_param['M']
@@ -91,15 +91,7 @@ class CUBVEC(BaseANN):
         return METRIC_PROPERTIES[self._metric]
 
     def pre_fit(self, X):
-        t0 = time.time()
         self._prepare_object_files(X)
-        print("Prepare object files time: {:.3f} sec".format(time.time() - t0))
-
-        t1 = time.time()
-        self._start_cubrid_services("start")
-        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t1))
-
-        print("Total pre_fit time: {:.3f} sec".format(time.time() - t0))
 
     def fit(self, X):
         if self._perf_pid != None:
@@ -131,9 +123,14 @@ class CUBVEC(BaseANN):
         self._cur._cs.prepare(self._query)
 
     def query(self, v, n):
+        vector_str = "[" + ",".join(map(str, v)) + "]"
         cur = self._cur
 
-        cur._cs.bind_param(1, v, CUBRIDdb.FIELD_TYPE.VECTOR)
+        # args = [vector_str, n] # this reduces QPS from 3500 to 600
+        args = [vector_str]
+        set_type = None
+        if args is not None:
+            cur._bind_params(args, set_type)
         r = cur._cs.execute()
         cur.rowcount = cur._cs.rowcount
         cur.description = cur._cs.description
@@ -151,14 +148,17 @@ class CUBVEC(BaseANN):
         try:
             print("Database does not exist. Creating new database...")
 
+            self._start_cubrid_services("start")
+
             conn = self._connect_to_db()
             cur = self._open_cursor_primitive(conn)
 
             self._create_table_and_index(cur, X.shape[1])
 
-            insert_start = time.time()
+            start_time = time.time()
             self._insert_data(X)
-            print("Insert data time: {:.3f} sec".format(time.time() - insert_start))
+
+            print("Total inserting data time: {:.3f} sec".format(time.time() - start_time))
 
             if self._statdump_mode:
               self._statdump_proc = self._run_statdump("build")
@@ -175,9 +175,9 @@ class CUBVEC(BaseANN):
                 self._ef_construction
                 )
             )
-            index_start = time.time()
             cur.execute(idx_stmt)
-            print("Index build time: {:.3f} sec".format(time.time() - index_start))
+
+            print("Total building index time: {:.3f} sec".format(time.time() - start_time))
 
             if self._statdump_mode:
               statdump = self._stop_and_collect_statdump("build")
