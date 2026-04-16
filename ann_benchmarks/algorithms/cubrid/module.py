@@ -91,7 +91,15 @@ class CUBVEC(BaseANN):
         return METRIC_PROPERTIES[self._metric]
 
     def pre_fit(self, X):
+        t0 = time.time()
         self._prepare_object_files(X)
+        print("Prepare object files time: {:.3f} sec".format(time.time() - t0))
+
+        t1 = time.time()
+        self._start_cubrid_services("start")
+        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t1))
+
+        print("Total pre_fit time: {:.3f} sec".format(time.time() - t0))
 
     def fit(self, X):
         if self._perf_pid != None:
@@ -142,8 +150,6 @@ class CUBVEC(BaseANN):
         success = False
         try:
             print("Database does not exist. Creating new database...")
-
-            self._start_cubrid_services("start")
 
             conn = self._connect_to_db()
             cur = self._open_cursor_primitive(conn)
