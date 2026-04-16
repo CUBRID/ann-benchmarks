@@ -181,6 +181,7 @@ def build_index(algo: BaseANN, X_train: numpy.ndarray) -> Tuple:
     Returns:
         Tuple: The build time and index size.
     """
+    algo.pre_fit(X_train)
     t0 = time.time()
     memory_usage_before = algo.get_memory_usage()
     algo.fit(X_train)

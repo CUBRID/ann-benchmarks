@@ -21,8 +21,15 @@ class BaseANN(object):
 
         return psutil.Process().memory_info().rss / 1024
 
+    def pre_fit(self, X: numpy.array) -> None:
+        """Prepare data before index building. Called before build_time measurement starts.
+
+        Override this to perform untimed setup work (e.g., data file preparation).
+        """
+        pass
+
     def fit(self, X: numpy.array) -> None:
-        """Fits the ANN algorithm to the provided data. 
+        """Fits the ANN algorithm to the provided data.
 
         Note: This is a placeholder method to be implemented by subclasses.
 

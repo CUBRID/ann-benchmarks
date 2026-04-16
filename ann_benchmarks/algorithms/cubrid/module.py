@@ -90,6 +90,9 @@ class CUBVEC(BaseANN):
                 self._metric, ', '.join(sorted(METRIC_PROPERTIES.keys()))))
         return METRIC_PROPERTIES[self._metric]
 
+    def pre_fit(self, X):
+        self._prepare_object_files(X)
+
     def fit(self, X):
         if self._perf_pid != None:
           self._stop_perf_marker("query")
@@ -144,10 +147,6 @@ class CUBVEC(BaseANN):
 
             conn = self._connect_to_db()
             cur = self._open_cursor_primitive(conn)
-
-            prepare_start = time.time()
-            self._prepare_object_files(X)
-            print("Prepare object files time: {:.3f} sec".format(time.time() - prepare_start))
 
             self._create_table_and_index(cur, X.shape[1])
 
