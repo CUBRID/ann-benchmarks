@@ -90,16 +90,13 @@ class CUBVEC(BaseANN):
                 self._metric, ', '.join(sorted(METRIC_PROPERTIES.keys()))))
         return METRIC_PROPERTIES[self._metric]
 
-    def pre_fit(self, X):
-        t0 = time.time()
-        self._start_cubrid_services("start")
-        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t0))
-
-        print("Total pre_fit time: {:.3f} sec".format(time.time() - t0))
-
     def fit(self, X):
         if self._perf_pid != None:
           self._stop_perf_marker("query")
+
+        t0 = time.time()
+        self._start_cubrid_services("start")
+        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t0))
 
         success = self._create_db(X)
         if success:
