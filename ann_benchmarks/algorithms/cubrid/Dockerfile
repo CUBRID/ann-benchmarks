@@ -130,12 +130,8 @@ ENV OPENBLAS_NUM_THREADS=1
 RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     cubrid createdb --db-volume-size=3G --log-volume-size=1G ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
-    echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf && \
-    echo "log_buffer_size=256M" >> $CUBRID/conf/cubrid.conf && \
-    echo "sort_buffer_size=64M" >> $CUBRID/conf/cubrid.conf && \
-    echo "double_write_buffer_size=0" >> $CUBRID/conf/cubrid.conf && \
+    echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
-    echo "temp_file_memory_size_in_pages=20" >> $CUBRID/conf/cubrid.conf && \
     echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
@@ -160,4 +156,7 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
         sleep 1; \
     done && \
     csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD}';"
+    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD}';" && \
+    cubrid broker stop && \
+    cubrid server stop ${ANN_BENCHMARKS_CUB_DBNAME}
+
