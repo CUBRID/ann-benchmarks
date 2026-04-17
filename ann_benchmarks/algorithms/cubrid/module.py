@@ -92,12 +92,8 @@ class CUBVEC(BaseANN):
 
     def pre_fit(self, X):
         t0 = time.time()
-        self._prepare_object_files(X)
-        print("Prepare object files time: {:.3f} sec".format(time.time() - t0))
-
-        t1 = time.time()
         self._start_cubrid_services("start")
-        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t1))
+        print("Start CUBRID services time: {:.3f} sec".format(time.time() - t0))
 
         print("Total pre_fit time: {:.3f} sec".format(time.time() - t0))
 
@@ -157,7 +153,7 @@ class CUBVEC(BaseANN):
             self._create_table_and_index(cur, X.shape[1])
 
             insert_start = time.time()
-            self._insert_data(X)
+            self._insert_data(conn, X)
             print("Insert data time: {:.3f} sec".format(time.time() - insert_start))
 
             if self._statdump_mode:
@@ -229,33 +225,6 @@ class CUBVEC(BaseANN):
         except subprocess.CalledProcessError as e:
                 print("Failed to start CUBRID broker:", e)
 
-    def _prepare_object_files(self, X):
-        total_rows, dim = X.shape
-        batch_size = 50000
-        header = f"%id items 0\n%class items ([id] [embedding])\n"
-
-        for start in range(0, total_rows, batch_size):
-            end = min(start + batch_size, total_rows)
-            object_file_path = f"/tmp/items_object_{start}_{end}"
-            if os.path.exists(object_file_path + ".flag"):
-                print(f"Skipping batch {start}-{end}")
-                continue
-
-            buffer = io.StringIO()
-            lines = [
-                f"{i} '[{','.join(map(str, vec))}]'\n"
-                for i, vec in enumerate(X[start:end], start=start)
-            ]
-            buffer.write(header)
-            buffer.writelines(lines)
-
-            with open(object_file_path, "w") as f:
-                f.write(buffer.getvalue())
-            with open(object_file_path + ".flag", "w") as f:
-                f.write("success")
-
-            print(f"Prepared object file for batch {start}-{end}")
-
     # for debugging
     def _table_exists_and_has_correct_count(self, cur, table_name, expected_count) -> bool:
         try:
@@ -299,11 +268,50 @@ class CUBVEC(BaseANN):
                     print(f"INSERT failed at row {i}: {e}")
                     raise
 
-    def _insert_data(self, X):
+    def _insert_data(self, conn, X):
+        total_rows = X.shape[0]
+        print(f"Copying {total_rows} rows into items via COPY FROM STDIN (FORMAT BINARY)...")
+        sys.stdout.flush()
+
+        with conn.copy(
+            "COPY items FROM STDIN WITH (FORMAT BINARY)",
+            types=["INT", "VECTOR(256)"],
+        ) as writer:
+            for i, vec in enumerate(X):
+                writer.write_row((i, vec))
+
+        print(f"Rows loaded: {writer.rows_loaded}")
+
+    def _prepare_object_files(self, X):
+        total_rows, dim = X.shape
+        batch_size = 50000
+        header = f"%id items 0\n%class items ([id] [embedding])\n"
+
+        for start in range(0, total_rows, batch_size):
+            end = min(start + batch_size, total_rows)
+            object_file_path = f"/tmp/items_object_{start}_{end}"
+            if os.path.exists(object_file_path + ".flag"):
+                print(f"Skipping batch {start}-{end}")
+                continue
+
+            buffer = io.StringIO()
+            lines = [
+                f"{i} '[{','.join(map(str, vec))}]'\n"
+                for i, vec in enumerate(X[start:end], start=start)
+            ]
+            buffer.write(header)
+            buffer.writelines(lines)
+
+            with open(object_file_path, "w") as f:
+                f.write(buffer.getvalue())
+            with open(object_file_path + ".flag", "w") as f:
+                f.write("success")
+
+            print(f"Prepared object file for batch {start}-{end}")
+
+    def _insert_data_loaddb(self, X):
         total_rows = X.shape[0]
         batch_size = 50000
-
-        print(f"test insert")
 
         for start in range(0, total_rows, batch_size):
             end = min(start + batch_size, total_rows)
