@@ -2,11 +2,13 @@ FROM ann-benchmarks
 
 # https://github.com/pgvector/pgvector/blob/master/Dockerfile
 
-RUN git clone https://github.com/hgryoo/pgvector /tmp/pgvector
-RUN cd /tmp/pgvector && git fetch origin && git checkout 3adb250 && cd -
+RUN git clone https://github.com/pgvector/pgvector /tmp/pgvector
+RUN cd /tmp/pgvector
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential postgresql-common
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list \
+ && sed -i 's|http://security.ubuntu.com/ubuntu|https://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list \
+ && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata \
+ && apt-get install -y --no-install-recommends build-essential postgresql-common
 RUN /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 RUN apt-get install -y --no-install-recommends postgresql-16 postgresql-server-dev-16
 RUN sh -c 'echo "local all all trust" > /etc/postgresql/16/main/pg_hba.conf'

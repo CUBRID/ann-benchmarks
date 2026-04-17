@@ -326,11 +326,6 @@ class PGVector(BaseANN):
             progress_monitor.stop_monitoring_thread()
         print("done!")
         progress_monitor.report_timings()
-
-        cur.execute ("SELECT get_call_cnt ()");
-        stat_str = "STAT: %s" % (cur.fetchone ())
-        print (stat_str)
-
         self._cur = cur
 
     def set_query_arguments(self, ef_search):
@@ -346,11 +341,6 @@ class PGVector(BaseANN):
             return 0
         self._cur.execute("SELECT pg_relation_size('items_embedding_idx')")
         return self._cur.fetchone()[0] / 1024
-
-    def done(self) -> None:
-        self._cur.execute ("SELECT get_call_cnt ()");
-        stat_str = "STAT: %s" % (self._cur.fetchone ())
-        print (stat_str)
 
     def __str__(self):
         return f"PGVector(m={self._m}, ef_construction={self._ef_construction}, ef_search={self._ef_search})"
