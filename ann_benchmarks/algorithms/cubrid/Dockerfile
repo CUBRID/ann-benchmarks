@@ -53,9 +53,9 @@ RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
 ARG GIT_REMOTE_URL=https://github.com/hgryoo/cubrid.git
-ARG GIT_BRANCH=cubvec/m1-nv
+ARG GIT_BRANCH=cubvec/m1-copy
 ARG PYTHON_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-python.git
-ARG PYTHON_GIT_BRANCH=cubvec/m1-nv
+ARG PYTHON_GIT_BRANCH=cubvec/m1-copy
 ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci.git
 ARG CCI_GIT_BRANCH=cubvec/m1-nv
 ARG GIT_COMMIT=
