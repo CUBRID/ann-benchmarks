@@ -210,17 +210,31 @@ class CUBVEC(BaseANN):
                                         kwargs['password'])
 
     def _start_cubrid_services(self, command):
-        try:
-                subprocess.run(["cubrid", "server", command, "ann"], check=True)
-                print("CUBRID server 'ann' started.")
-        except subprocess.CalledProcessError as e:
-                print("Failed to start CUBRID server:", e)
+        # Launch server and broker concurrently. The broker's CAS children retry
+        # connecting to the server, so broker launch can overlap with server boot.
+        server_proc = subprocess.Popen(
+            ["cubrid", "server", command, "ann"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        broker_proc = subprocess.Popen(
+            ["cubrid", "broker", command],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
 
-        try:
-                subprocess.run(["cubrid", "broker", command], check=True)
-                print("CUBRID broker started.")
-        except subprocess.CalledProcessError as e:
-                print("Failed to start CUBRID broker:", e)
+        server_rc = server_proc.wait()
+        broker_rc = broker_proc.wait()
+
+        if server_rc == 0:
+            print("CUBRID server 'ann' started.")
+        else:
+            print("Failed to start CUBRID server (rc={}):\n{}".format(
+                server_rc, server_proc.stderr.read()))
+
+        if broker_rc == 0:
+            print("CUBRID broker started.")
+        else:
+            print("Failed to start CUBRID broker (rc={}):\n{}".format(
+                broker_rc, broker_proc.stderr.read()))
 
     # for debugging
     def _table_exists_and_has_correct_count(self, cur, table_name, expected_count) -> bool:
