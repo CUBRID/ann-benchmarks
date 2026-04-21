@@ -127,19 +127,17 @@ ENV ANN_BENCHMARKS_CUB_NUM_CAS=3
 # required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
 ENV OPENBLAS_NUM_THREADS=1
 
-RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
-    cubrid createdb --db-volume-size=3G --log-volume-size=1G ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
+# Conf edits only (no createdb at build time). createdb is deferred to the
+# container entrypoint so the preallocated data/log volume files land in the
+# overlayfs upper layer -- otherwise open(O_RDWR) at server boot triggers a
+# full copy-up of the 3 GB data volume + 1 GB log (~32 s on tmp overlay).
+RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
     echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
-    cubrid server start ${ANN_BENCHMARKS_CUB_DBNAME} && \
-    until cubrid server status | grep -q "Server ${ANN_BENCHMARKS_CUB_DBNAME}"; do \
-        echo "Waiting for '${ANN_BENCHMARKS_CUB_DBNAME}' DB to start..."; \
-        sleep 1; \
-    done && \
     awk ' \
       BEGIN { skip=0 } \
       /^\[%query_editor\]/ { skip=1; next } \
@@ -149,14 +147,8 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
     mv /tmp/cubrid_broker.conf $CUBRID/conf/cubrid_broker.conf && \
     sed -i "s/^MIN_NUM_APPL_SERVER[ \t]*=.*/MIN_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
     sed -i "s/^MAX_NUM_APPL_SERVER[ \t]*=.*/MAX_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
-    sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf && \
-    cubrid broker start && \
-    until cubrid broker status | grep -q "% broker1"; do \
-        echo "Waiting for broker1 to start..."; \
-        sleep 1; \
-    done && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD}';" && \
-    cubrid broker stop && \
-    cubrid server stop ${ANN_BENCHMARKS_CUB_DBNAME}
+    sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf
 
+COPY init-cubrid.sh /usr/local/bin/init-cubrid.sh
+RUN chmod +x /usr/local/bin/init-cubrid.sh
+ENTRYPOINT ["/usr/local/bin/init-cubrid.sh"]
