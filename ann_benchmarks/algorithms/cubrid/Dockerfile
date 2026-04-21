@@ -135,7 +135,11 @@ RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
-    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
+    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf
+#    echo "max_connection_worker=2" >> $CUBRID/conf/cubrid.conf && \
+#    echo "min_connection_worker=1" >> $CUBRID/conf/cubrid.conf 
+#    echo "boot_perf_trace=yes" >> $CUBRID/conf/cubrid.conf && \
+#    echo "er_log_debug=yes" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
     awk ' \
@@ -149,6 +153,6 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
     sed -i "s/^MAX_NUM_APPL_SERVER[ \t]*=.*/MAX_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
     sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf
 
-COPY init-cubrid.sh /usr/local/bin/init-cubrid.sh
+COPY ann_benchmarks/algorithms/cubrid/init-cubrid.sh /usr/local/bin/init-cubrid.sh
 RUN chmod +x /usr/local/bin/init-cubrid.sh
 ENTRYPOINT ["/usr/local/bin/init-cubrid.sh"]

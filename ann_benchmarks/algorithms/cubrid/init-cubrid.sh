@@ -41,4 +41,5 @@ else
     echo "[init-cubrid] Database '${DBNAME}' already exists, skipping init."
 fi
 
-exec "$@"
+cd /home/app
+exec python -u run_algorithm.py "$@"

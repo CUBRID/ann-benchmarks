@@ -27,6 +27,8 @@ import time
 import io
 import CUBRIDdb
 import signal
+import threading
+import glob
 
 from typing import Dict, Any, Optional
 
@@ -209,20 +211,63 @@ class CUBVEC(BaseANN):
                                         kwargs['user'],
                                         kwargs['password'])
 
+    def _tail_cubrid_log(self, dbname):
+        if getattr(self, "_tail_proc", None) is not None:
+            return  # already tailing
+        cubrid = os.environ.get("CUBRID")
+        if not cubrid:
+            self.log.warning("CUBRID env not set; skipping log tail")
+            return
+        log_dir = os.path.join(cubrid, "log", "server")
+        latest = os.path.join(log_dir, f"{dbname}_latest.err")
+
+        def watcher():
+            deadline = time.time() + 60  # give up after 60s
+            while not os.path.exists(latest):
+                if time.time() > deadline:
+                    self.log.warning("log %s never appeared", latest)
+                    return
+                time.sleep(0.1)
+            # -n +1: include everything written before we attached
+            # -F:    follow by name, survive rotation
+            self._tail_proc = subprocess.Popen(
+                ["tail", "-n", "+1", "-F", latest]
+            )
+        threading.Thread(target=watcher, daemon=True).start()
+
+    def _stop_tail(self):
+        p = getattr(self, "_tail_proc", None)
+        if p is not None:
+            p.terminate()
+            self._tail_proc = None
+
     def _start_cubrid_services(self, command):
         # Launch server and broker concurrently. The broker's CAS children retry
         # connecting to the server, so broker launch can overlap with server boot.
+
+        self._tail_cubrid_log("ann")
+
+        t0 = time.time()
         server_proc = subprocess.Popen(
             ["cubrid", "server", command, "ann"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        print("server launched:", time.time() - t0)
+
+        t1 = time.time()
         broker_proc = subprocess.Popen(
             ["cubrid", "broker", command],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        print("broker launched:", time.time() - t1)
 
-        server_rc = server_proc.wait()
+        t2 = time.time()
         broker_rc = broker_proc.wait()
+        print("waiting done(broker):", time.time() - t2)
+
+        t3 = time.time()
+        server_rc = server_proc.wait()
+        print("waiting done(server):", time.time() - t3)
 
         if server_rc == 0:
             print("CUBRID server 'ann' started.")
@@ -235,6 +280,8 @@ class CUBVEC(BaseANN):
         else:
             print("Failed to start CUBRID broker (rc={}):\n{}".format(
                 broker_rc, broker_proc.stderr.read()))
+
+        self._stop_tail()
 
     # for debugging
     def _table_exists_and_has_correct_count(self, cur, table_name, expected_count) -> bool:
