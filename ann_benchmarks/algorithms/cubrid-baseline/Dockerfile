@@ -52,13 +52,17 @@ ENV CMAKE_VERSION=3.26.3
 RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz | \
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
-ARG GIT_REMOTE_URL=https://github.com/CUBRID/cubrid.git
-ARG GIT_BRANCH=cubvec/cubvec
+ARG GIT_REMOTE_URL=https://github.com/hgryoo/cubrid.git
+ARG GIT_BRANCH=cubvec/m1
+ARG PYTHON_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-python.git
+ARG PYTHON_GIT_BRANCH=cubvec/m1-copy
+ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci.git
+ARG CCI_GIT_BRANCH=cubvec/m1-nv
 ARG GIT_COMMIT=
 ARG PRESET=release_avx2
 
 RUN git clone ${GIT_REMOTE_URL} /tmp/cubrid
-RUN git clone https://github.com/cubrid/cubrid-python /tmp/cubrid-python
+RUN git clone ${PYTHON_GIT_REMOTE_URL} /tmp/cubrid-python
 
 RUN cd /tmp/cubrid
 
@@ -75,7 +79,12 @@ RUN BUILD_DIR="build_preset_${PRESET}" && \
         echo "Checkout branch: origin/$GIT_BRANCH" && \
         git checkout --detach "origin/$GIT_BRANCH"; \
     fi && \
+    git submodule set-url cubrid-cci ${CCI_GIT_REMOTE_URL} && \
     git submodule update --init cubrid-cci && \
+    cd /tmp/cubrid/cubrid-cci && \
+    git fetch origin && \
+    git checkout --detach "origin/${CCI_GIT_BRANCH}" && \
+    cd /tmp/cubrid && \
     cmake --preset "$PRESET" -DENABLE_SYSTEMTAP=OFF && \
     cmake --build --preset "$PRESET" -j4 && \
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_DIR"
@@ -83,9 +92,14 @@ RUN BUILD_DIR="build_preset_${PRESET}" && \
 # do we need to run as cubrid?
 # USER cubrid
 RUN cd /tmp/cubrid-python && \
-    git checkout develop && \
-    git submodule set-url cci-src https://github.com/CUBRID/cubrid-cci.git && \
+    git fetch origin && \
+    git checkout --detach "origin/${PYTHON_GIT_BRANCH}" && \
+    git submodule set-url cci-src ${CCI_GIT_REMOTE_URL} && \
     git submodule update --init --recursive && \
+    cd /tmp/cubrid-python/cci-src && \
+    git fetch origin && \
+    git checkout --detach "origin/${CCI_GIT_BRANCH}" && \
+    cd /tmp/cubrid-python && \
     ln -sf /bin/bash /bin/sh && \
     python setup.py build && \
     python setup.py install
@@ -111,22 +125,17 @@ ENV ANN_BENCHMARKS_CUB_NUM_CAS=3
 # required to prevent CAS memory hard limit, due to faiss 3rdparty dependency
 ENV OPENBLAS_NUM_THREADS=1
 
-RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && cd ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
-    cubrid createdb --db-volume-size=3G --log-volume-size=1G ${ANN_BENCHMARKS_CUB_DBNAME} en_US.utf8 && \
+# Conf edits only (no createdb at build time). createdb is deferred to the
+# container entrypoint so the preallocated data/log volume files land in the
+# overlayfs upper layer -- otherwise open(O_RDWR) at server boot triggers a
+# full copy-up of the 3 GB data volume + 1 GB log (~32 s on tmp overlay).
+RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
-    echo "data_buffer_size=16G" >> $CUBRID/conf/cubrid.conf && \
-    echo "log_buffer_size=256M" >> $CUBRID/conf/cubrid.conf && \
-    echo "sort_buffer_size=64M" >> $CUBRID/conf/cubrid.conf && \
-    echo "double_write_buffer_size=0" >> $CUBRID/conf/cubrid.conf && \
+    echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
     echo "max_clients=10" >> $CUBRID/conf/cubrid.conf
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
-    cubrid server start ${ANN_BENCHMARKS_CUB_DBNAME} && \
-    until cubrid server status | grep -q "Server ${ANN_BENCHMARKS_CUB_DBNAME}"; do \
-        echo "Waiting for '${ANN_BENCHMARKS_CUB_DBNAME}' DB to start..."; \
-        sleep 1; \
-    done && \
     awk ' \
       BEGIN { skip=0 } \
       /^\[%query_editor\]/ { skip=1; next } \
@@ -136,11 +145,8 @@ RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVE
     mv /tmp/cubrid_broker.conf $CUBRID/conf/cubrid_broker.conf && \
     sed -i "s/^MIN_NUM_APPL_SERVER[ \t]*=.*/MIN_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
     sed -i "s/^MAX_NUM_APPL_SERVER[ \t]*=.*/MAX_NUM_APPL_SERVER = ${ANN_BENCHMARKS_CUB_NUM_CAS}/" $CUBRID/conf/cubrid_broker.conf && \
-    sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf && \
-    cubrid broker start && \
-    until cubrid broker status | grep -q "% broker1"; do \
-        echo "Waiting for broker1 to start..."; \
-        sleep 1; \
-    done && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "CREATE USER ${ANN_BENCHMARKS_CUB_USER};" && \
-    csql -u dba ${ANN_BENCHMARKS_CUB_DBNAME} -c "ALTER USER ${ANN_BENCHMARKS_CUB_USER} PASSWORD '${ANN_BENCHMARKS_CUB_PASSWORD}';"
+    sed -i "s/^BROKER_PORT[ \t]*=.*/BROKER_PORT = ${ANN_BENCHMARKS_CUB_PORT}/" $CUBRID/conf/cubrid_broker.conf
+
+COPY ann_benchmarks/algorithms/cubrid-baseline/init-cubrid.sh /usr/local/bin/init-cubrid.sh
+RUN chmod +x /usr/local/bin/init-cubrid.sh
+ENTRYPOINT ["/usr/local/bin/init-cubrid.sh"]
