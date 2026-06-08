@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
-sudo -v
+
+# enable if your env requires sudo privileage
+# sudo -v
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
