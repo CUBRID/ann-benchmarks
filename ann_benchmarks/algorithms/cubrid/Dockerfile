@@ -52,12 +52,12 @@ ENV CMAKE_VERSION=3.26.3
 RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz | \
     tar --strip-components=1 -xz -C /usr --wildcards 'cmake-*/*'
 
-ARG GIT_REMOTE_URL=https://github.com/hgryoo/cubrid.git
-ARG GIT_BRANCH=cubvec/m1-copy
-ARG PYTHON_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-python.git
-ARG PYTHON_GIT_BRANCH=cubvec/m1-copy
-ARG CCI_GIT_REMOTE_URL=https://github.com/hgryoo/cubrid-cci.git
-ARG CCI_GIT_BRANCH=cubvec/m1-nv
+ARG GIT_REMOTE_URL=https://github.com/cubrid/cubrid.git
+ARG GIT_BRANCH=cubvec/tta
+ARG PYTHON_GIT_REMOTE_URL=https://github.com/cubrid/cubrid-python.git
+ARG PYTHON_GIT_BRANCH=cubvec/tta
+ARG CCI_GIT_REMOTE_URL=https://github.com/cubrid/cubrid-cci.git
+ARG CCI_GIT_BRANCH=cubvec/m1
 ARG GIT_COMMIT=
 ARG PRESET=release_avx2
 
@@ -135,11 +135,9 @@ RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
-    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf
-#    echo "max_connection_worker=2" >> $CUBRID/conf/cubrid.conf && \
-#    echo "min_connection_worker=1" >> $CUBRID/conf/cubrid.conf 
-#    echo "boot_perf_trace=yes" >> $CUBRID/conf/cubrid.conf && \
-#    echo "er_log_debug=yes" >> $CUBRID/conf/cubrid.conf 
+    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf && \
+    echo "boot_perf_trace=yes" >> $CUBRID/conf/cubrid.conf && \
+    echo "er_log_debug=yes" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
     awk ' \
