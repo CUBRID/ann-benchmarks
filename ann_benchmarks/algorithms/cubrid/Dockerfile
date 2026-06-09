@@ -135,9 +135,9 @@ RUN mkdir -p ${ANN_BENCHMARKS_CUB_DB_PATH}/initdb && \
     echo "[@${ANN_BENCHMARKS_CUB_DBNAME}]" >> $CUBRID/conf/cubrid.conf && \
     echo "data_buffer_size=4G" >> $CUBRID/conf/cubrid.conf && \
     echo "stored_procedure=no" >> $CUBRID/conf/cubrid.conf && \
-    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf && \
-    echo "boot_perf_trace=yes" >> $CUBRID/conf/cubrid.conf && \
-    echo "er_log_debug=yes" >> $CUBRID/conf/cubrid.conf 
+    echo "max_clients=10" >> $CUBRID/conf/cubrid.conf 
+    # echo "boot_perf_trace=yes" >> $CUBRID/conf/cubrid.conf && \
+    # echo "er_log_debug=yes" >> $CUBRID/conf/cubrid.conf 
 
 RUN sed -i "s/^cubrid_port_id *= *.*/cubrid_port_id = ${ANN_BENCHMARKS_CUB_SERVER_PORT}/" $CUBRID/conf/cubrid.conf && \
     awk ' \
