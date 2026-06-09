@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # defaults
-GIT_REMOTE_URL=""
+GIT_REMOTE_URL="http://github.com/cubrid/cubrid"
 GIT_COMMIT=""
-GIT_BRANCH="cubvec/cubvec"
+GIT_BRANCH="cubvec/m1"
 
 usage() {
   echo "Usage:"
